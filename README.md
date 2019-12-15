@@ -1,6 +1,7 @@
 # Beaver: a solver for halting problem of Brainfuck programs
 
 <https://en.wikipedia.org/wiki/Halting_problem>
+
 <https://en.wikipedia.org/wiki/Brainfuck>
 
 ## Usage:
@@ -18,11 +19,12 @@ Try to prove that a given program runs forever, and print the proof as a series 
 We are trying to construct the series of predicates about the tape, that act as invariants after each step of the program. The predicates are composed using the following primitives:
 
 * `True` – true for any tape
+* `False` — false for any tape
 * `ZerosFrom(offset)` – all cells starting from the `offset` are zero. For instance if the currently selected cell has address 3, the predicate `ZerosFrom(-1)` means that all the cells from 2 on are filled with zeros. The invariant before execution of the first step is `ZerosFrom(0)`: all tape is filled with 0s.
 * `Equals(offset, value)` – the value at the `offset` is `value`.
-* `GreaterTahn(offset, value)` – the value at the `offset` is greater than `value`.
+* `GreaterThan(offset, value)` – the value at the `offset` is greater than `value`.
 * `All(pred1, pred2, ...)` – all of the predicates `pred1`, `pred2` and so on hold.
-* (not yet implemented) `Any(pred1, pred2, ...)` – any of the predicates `pred1`, `pred2` and so on holds.
+* `Any(pred1, pred2, ...)` – any of the predicates `pred1`, `pred2` and so on holds.
 
 We start at step 0, and trace the program, modifying the current invariant according to the performed operations. When we meet a `]`, then:
 - if we can infer from the current invariant that `Equals(0, 0)`, then we go forward,
