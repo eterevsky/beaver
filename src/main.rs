@@ -45,8 +45,11 @@ fn optimize_all(children: Vec<Predicate>) -> Vec<Predicate> {
     flatten_all(&mut children);
     for i in 0..children.len() {
         for j in 0..children.len() {
-            if i != j && children[i].implies(&children[j]) { 
+            if i == j { continue; }
+            if children[i].implies(&children[j]) { 
                 children[j] = Predicate::True;
+            } else if children[i].incompatible(&children[j]) {
+                return vec![Predicate::False]
             }
         }
     }
@@ -215,6 +218,46 @@ impl Predicate {
         }
     }
 
+    // Checks whether this predicate implies negation of another predicate.
+    fn incompatible(&self, other: &Predicate) -> bool {
+        match (self, other) {
+            (Predicate::False, _) => true,
+
+            (_, Predicate::False) => true,
+
+            (s, Predicate::Any(children)) => children.iter().all(|c| s.incompatible(c)),
+
+            (Predicate::Any(children), o) => children.iter().all(|c| c.incompatible(o)),
+
+            (s, Predicate::All(children)) => children.iter().any(|c| s.incompatible(c)),
+
+            (Predicate::All(children), o) => children.iter().any(|c| c.incompatible(o)),
+
+            (Predicate::ZerosFrom(zeros_from), Predicate::Equals(offset, v)) =>
+                zeros_from <= offset && *v != 0,
+
+            (Predicate::Equals(offset, v), Predicate::ZerosFrom(zeros_from)) =>
+                zeros_from <= offset && *v != 0,
+
+            (Predicate::ZerosFrom(zeros_from), Predicate::GreaterThan(offset, _)) =>
+                zeros_from <= offset,
+
+            (Predicate::GreaterThan(offset, _), Predicate::ZerosFrom(zeros_from)) =>
+                zeros_from <= offset,
+
+            (Predicate::Equals(offset_e, v), Predicate::GreaterThan(offset_g, l)) =>
+                offset_e == offset_g && v <= l,
+
+            (Predicate::GreaterThan(offset_g, l), Predicate::Equals(offset_e, v)) =>
+                offset_e == offset_g && v <= l,
+
+            (Predicate::Equals(o1, v1), Predicate::Equals(o2, v2)) =>
+                o1 == o2 && v1 != v2,
+
+            _ => false,
+        }
+    }
+
     // Recursively apply the instruction.  
     fn apply_impl(&self, instruction: Instruction) -> Self {
         match (instruction, self.clone()) {
@@ -232,8 +275,13 @@ impl Predicate {
 
             (Instruction::Inc, Predicate::ZerosFrom(offset)) if offset > 0 => Predicate::ZerosFrom(offset),
 
-            (Instruction::Inc, Predicate::ZerosFrom(offset)) if offset <= 0 =>
-                Predicate::All(vec![Predicate::ZerosFrom(1), Predicate::Equals(0, 1)]),
+            (Instruction::Inc, Predicate::ZerosFrom(offset)) if offset <= 0 => {
+                let mut children = vec![Predicate::ZerosFrom(1), Predicate::Equals(0, 1)];
+                for i in offset..0 {
+                    children.push(Predicate::Equals(i, 0));
+                }
+                Predicate::All(children)
+            },
 
             (Instruction::Inc, Predicate::Equals(0, x)) => Predicate::Equals(0, x + 1),
            
@@ -528,7 +576,7 @@ fn test_zeros_apply_inc() {
 }
 
 fn solve_for_program(program: Program, verbose: bool) -> State {
-    let mut state = run(&program, 2000);
+    let mut state = run(&program, 5000);
 
     if state.status == Status::Running {
         // let maybe_proof = prove_infinite(&p, &state);
