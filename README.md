@@ -46,3 +46,28 @@ To exclude some uninteresting long-running programs we use a pretty restrictive 
 * Increment of 255 and decrement of 0 result in overflow and program halting.
 
 The prover assumes that all the operations are successful, so the proof of non-stopping actually means that the program either runs forever, or stops due to an overflow. 
+
+## Results
+
+| Length | Total       | Finishing  | Infinite   | Overflow | Unknown | Longest running | Touching most cells |
+| ------ | ----------- | ---------- | ---------- | -------- | ------- | --------------- | ------------------- |
+| 1      | 4           | 2          |            | 2        |         | `+` 1           | `>` 2               |
+| 2      | 17          | 7          |            | 10       |         | `++` 2          | `>>` 3              |
+| 3      | 76          | 21         | 1          | 54       |         | `+++` 3         | `>>>` 4             |
+| 4      | 354         | 79         | 7          | 268      |         | `++++` 4        | `>>>>` 5            |
+| 5      | 1'704       | 278        | 49         | 1'377     |         | `++[-]` 8       | `>>>>>` 6          |
+| 6      | 8'421       | 1'099      | 289        | 7'033     |         | `+++[-]` 12     | `>>>>>>` 7         |
+| 7      | 42'508      | 4'218      | 1'683      | 36'607    |         | `++++[-]` 16    | `>>>>>>>` 8       |
+| 8      | 218'318     | 17'293     | 9'417      | 191'568   | 40      | `+++++[-]` 20   | `>>>>>>>>` 9      |
+| 9      | 1'137'400   | 69'993     | 52'350     | 1'014'496  | 561    | `++++[-+-]` 24  | `>>>>>>>>>` 10    |
+| 10     | 5'996'938   | 295'042    | 287'848    | 5'409'261  | 4'787  | `+++++[-+-]` 30 | `>>>>>>>>>>` 11   |
+| 11     | 31'940'792  | 1'237'258  | 1'508'638  | 29'089'449 | 33'447 | `[>+++[-<]>]` 41 | `>>>>>>>>>>>` 12 |
+| 12     | 171'605'956 | 5'329'766  | 8'642'674  | 157'395'298 | 238'218 | `[>++++[-<]>]` 60 | `>>>>>>>>>>>>` 13 |
+| 13     | 928'931'280 | 22'921'438 | 47'341'020 | 857'130'730 | 1'538'092 | `[>+++++[-<]>]` 81 | `>>>>>>>>>>>>>` 14 |
+
+Some of the simplest programs for which `beaver` can't automatically prove they aren't stopping:
+    
+    [>+<+-+]
+    [+>+<-+]
+    [>[+<]>]
+ 

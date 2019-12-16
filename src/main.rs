@@ -598,8 +598,8 @@ fn solve_for_len(l: usize) {
     println!();
     println!("Total programs: {}", total_programs);
     println!("Finished: {}", finished);
-    println!("Tape overflow: {}", tape_overflow);
-    println!("Value overflow: {}", value_overflow);
+    println!("Overflow: tape {} + value {} = {}",
+            tape_overflow, value_overflow, tape_overflow + value_overflow);
     println!("Proven infinite: {}", infinite);
     println!("Running: {}", running);
     println!("Longest run: {} {}", longest_run, longest_running_program.unwrap());
