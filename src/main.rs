@@ -441,7 +441,7 @@ fn prove_starting_with_invariant(state: &State, invariant: Predicate,
 
     while let Some((ip, invariant)) = queue.pop_front() {
         counter += 1;
-        if counter > 32 { return None; }
+        if counter > 64 { return None; }
         if ip >= program.len() as usize {
             // We reached the end of the program.
             return None;
@@ -587,6 +587,7 @@ fn solve_for_program(program: Program, verbose: bool) -> State {
         if let Some(proof) = maybe_proof  {
             state.status = Status::Infinite;
             if verbose {
+                println!();
                 println!("{:?}", &proof.invariants[0]);
                 for i in 1..proof.invariants.len() {
                     println!("{} {:?}", program[(i-1) as u16], proof.invariants[i])
