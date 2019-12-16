@@ -1,135 +1,8 @@
+mod brainfuck;
+
+use crate::brainfuck::{Instruction, Program, State, Status, gen_valid_programs, run};
 use std::collections::VecDeque;
 use std::env;
-
-const INC: u8 = '+' as u8;
-const DEC: u8 = '-' as u8;
-const LEFT: u8 = '<' as u8;
-const RIGHT: u8 = '>' as u8;
-const LABEL: u8 = '[' as u8;
-const LOOP: u8 = ']' as u8;
-
-static INSTRUCTIONS: &'static [u8] = &[INC, DEC, LEFT, RIGHT, LABEL, LOOP];
-
-fn gen_valid_programs(len: usize) -> Vec<Vec<u8>> {
-    let mut programs = Vec::new();
-    for mut pcode in 0..6usize.pow(len as u32) {
-        let mut p = Vec::with_capacity(len);
-        let mut nesting: isize = 0;
-        let mut well_formed = true;
-        for _ in 0..len {
-            let instruction: u8 = INSTRUCTIONS[pcode % 6];
-            pcode /= 6;
-            p.push(instruction);
-            nesting += match instruction {
-                LABEL => 1,
-                LOOP => -1,
-                _ => 0,
-            };
-            if nesting < 0 {
-                well_formed = false;
-                break;
-            }
-        }
-        if well_formed && nesting == 0 {
-            programs.push(p);
-        }
-    }
-    return programs;
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum Status {
-    Running,
-    TapeOverflow,
-    ValueOverflow,
-    Finished,
-    Infinite,
-}
-
-#[derive(Clone, Debug)]
-struct State {
-    tape: Vec<u8>,
-    ip: usize,
-    pos: usize,
-    step: usize,
-    status: Status,
-}
-
-impl State {
-    fn new() -> Self { State { tape: vec![0], ip: 0, pos: 0, step: 0, status: Status::Running } }
-
-    fn val_at_offset(&self, offset: isize) -> u8 {
-        self.tape[(self.pos as isize + offset) as usize]
-    }
-}
-
-fn find_matching_label(program: &[u8], mut ip: usize) -> usize {
-    debug_assert!(program[ip] == LOOP);
-    let mut nesting = 1;
-    while nesting > 0 {
-        ip -= 1;
-        nesting += match program[ip] {
-            LOOP => 1,
-            LABEL => -1,
-            _ => 0,
-        };
-    };
-    ip
-}
-
-fn simulate_step(program: &[u8], mut state: State) -> State {
-    state.step += 1;
-    match program[state.ip] {
-        INC => {
-            if state.tape[state.pos] == 255 {
-                state.status = Status::ValueOverflow;
-                return state;
-            }
-            state.tape[state.pos] += 1;
-        },
-        DEC => {
-            if state.tape[state.pos] == 0 {
-                state.status = Status::ValueOverflow;
-                return state;
-            }
-            state.tape[state.pos] -= 1;
-        },
-        RIGHT => {
-            state.pos += 1;
-            if state.pos >= state.tape.len() {
-                state.tape.push(0);
-            }
-        },
-        LEFT => {
-            if state.pos == 0 {
-                state.status = Status::TapeOverflow;
-                return state;
-            } else {
-                state.pos -= 1;
-            }
-            
-        },
-        _ => {}
-    };
-    if program[state.ip] == LOOP && state.tape[state.pos] != 0 {
-        state.ip = find_matching_label(program, state.ip);
-    } else {
-        state.ip += 1;
-        if state.ip >= program.len() {
-            state.status = Status::Finished;
-        }
-    }
-    state
-}
-
-fn simulate(program: &[u8], steps: usize) -> State {
-    let mut state = State::new();
-    for _ in 0..steps {
-        state = simulate_step(program, state);
-        if state.status != Status::Running { break; }
-    }
-    state
-}
 
 #[derive(PartialEq, Debug, Clone)]
 enum Predicate {
@@ -343,11 +216,9 @@ impl Predicate {
     }
 
     // Recursively apply the instruction.  
-    fn apply_impl(&self, instruction: u8) -> Self {
+    fn apply_impl(&self, instruction: Instruction) -> Self {
         match (instruction, self.clone()) {
-            (LOOP, p) => p,
-
-            (LABEL, p) => p,
+            (Instruction::Label, p) => p,
 
             (i, Predicate::All(children)) => 
                 Predicate::All(children.iter().map(|c| c.apply_impl(i)).collect()).optimize(),
@@ -359,45 +230,49 @@ impl Predicate {
 
             (_, Predicate::False) => Predicate::False,
 
-            (INC, Predicate::ZerosFrom(offset)) if offset > 0 => Predicate::ZerosFrom(offset),
+            (Instruction::Inc, Predicate::ZerosFrom(offset)) if offset > 0 => Predicate::ZerosFrom(offset),
 
-            (INC, Predicate::ZerosFrom(offset)) if offset <= 0 =>
+            (Instruction::Inc, Predicate::ZerosFrom(offset)) if offset <= 0 =>
                 Predicate::All(vec![Predicate::ZerosFrom(1), Predicate::Equals(0, 1)]),
 
-            (INC, Predicate::Equals(0, x)) => Predicate::Equals(0, x + 1),
+            (Instruction::Inc, Predicate::Equals(0, x)) => Predicate::Equals(0, x + 1),
            
-            (INC, Predicate::Equals(offset, x)) => Predicate::Equals(offset, x),
+            (Instruction::Inc, Predicate::Equals(offset, x)) => Predicate::Equals(offset, x),
 
-            (INC, Predicate::GreaterThan(0, x)) => Predicate::GreaterThan(0, x + 1),
+            (Instruction::Inc, Predicate::GreaterThan(0, x)) => Predicate::GreaterThan(0, x + 1),
            
-            (INC, Predicate::GreaterThan(offset, x)) => Predicate::GreaterThan(offset, x),
+            (Instruction::Inc, Predicate::GreaterThan(offset, x)) => Predicate::GreaterThan(offset, x),
 
 
-            (DEC, Predicate::ZerosFrom(offset)) => Predicate::ZerosFrom(offset),
+            (Instruction::Dec, Predicate::ZerosFrom(offset)) if offset <= 0 => Predicate::False,
 
-            (DEC, Predicate::Equals(0, x)) => Predicate::Equals(0, x - 1),
+            (Instruction::Dec, Predicate::ZerosFrom(offset)) => Predicate::ZerosFrom(offset),
+
+            (Instruction::Dec, Predicate::Equals(0, 0)) => Predicate::False,
            
-            (DEC, Predicate::Equals(offset, x)) => Predicate::Equals(offset, x),
-
-            (DEC, Predicate::GreaterThan(0, 0)) => Predicate::True,
+            (Instruction::Dec, Predicate::Equals(0, x)) => Predicate::Equals(0, x - 1),
            
-            (DEC, Predicate::GreaterThan(0, x)) => Predicate::GreaterThan(0, x - 1),
+            (Instruction::Dec, Predicate::Equals(offset, x)) => Predicate::Equals(offset, x),
+
+            (Instruction::Dec, Predicate::GreaterThan(0, 0)) => Predicate::True,
            
-            (DEC, Predicate::GreaterThan(offset, x)) => Predicate::GreaterThan(offset, x),
+            (Instruction::Dec, Predicate::GreaterThan(0, x)) => Predicate::GreaterThan(0, x - 1),
+           
+            (Instruction::Dec, Predicate::GreaterThan(offset, x)) => Predicate::GreaterThan(offset, x),
 
 
-            (RIGHT, Predicate::ZerosFrom(offset)) => Predicate::ZerosFrom(offset - 1),
+            (Instruction::Right, Predicate::ZerosFrom(offset)) => Predicate::ZerosFrom(offset - 1),
 
-            (RIGHT, Predicate::Equals(offset, x)) => Predicate::Equals(offset - 1, x),
+            (Instruction::Right, Predicate::Equals(offset, x)) => Predicate::Equals(offset - 1, x),
 
-            (RIGHT, Predicate::GreaterThan(offset, x)) => Predicate::GreaterThan(offset - 1, x),
+            (Instruction::Right, Predicate::GreaterThan(offset, x)) => Predicate::GreaterThan(offset - 1, x),
 
 
-            (LEFT, Predicate::ZerosFrom(offset)) => Predicate::ZerosFrom(offset + 1),
+            (Instruction::Left, Predicate::ZerosFrom(offset)) => Predicate::ZerosFrom(offset + 1),
 
-            (LEFT, Predicate::Equals(offset, x)) => Predicate::Equals(offset + 1, x),
+            (Instruction::Left, Predicate::Equals(offset, x)) => Predicate::Equals(offset + 1, x),
 
-            (LEFT, Predicate::GreaterThan(offset, x)) => Predicate::GreaterThan(offset + 1, x),
+            (Instruction::Left, Predicate::GreaterThan(offset, x)) => Predicate::GreaterThan(offset + 1, x),
 
             _ => unreachable!()
         }
@@ -412,30 +287,16 @@ impl Predicate {
             Predicate::All(mut children) =>
                 Predicate::All(children.drain(..).map(|c| c.weaken()).collect()).optimize(),
             Predicate::Any(mut children) =>
-                Predicate::Any(children.drain(..).map(|c| c.strengthen()).collect()).optimize(),
-            _ => self,
-        }
-    }
-
-    // Construct a stronger version of the predicate by modifying all the predicates with offset
-    // farther than +/-1.
-    fn strengthen(self) -> Self {
-        match self {
-            Predicate::Equals(offset, _) if offset < -1 || offset > 1 => Predicate::False,
-            Predicate::GreaterThan(offset, _) if offset < -1 || offset > 1 => Predicate::False,
-            Predicate::All(mut children) =>
-                Predicate::All(children.drain(..).map(|c| c.strengthen()).collect()).optimize(),
-            Predicate::Any(mut children) =>
                 Predicate::Any(children.drain(..).map(|c| c.weaken()).collect()).optimize(),
             _ => self,
         }
     }
 
-    // Recursively apply the instruction.  
-    fn apply(&self, instruction: u8) -> Self {
+    // Modify the predicate after executing the instruction.
+    fn apply(&self, instruction: Instruction) -> Self {
         let predicate = self.apply_impl(instruction);
 
-        if instruction == INC && !predicate.implies(&Predicate::GreaterThan(0, 0)) {
+        if instruction == Instruction::Inc && !predicate.implies(&Predicate::GreaterThan(0, 0)) {
             Predicate::All(vec![Predicate::GreaterThan(0, 0), predicate]).optimize()
         } else {
             predicate
@@ -467,12 +328,12 @@ fn test_optimize() {
 
 #[test]
 fn test_check_zeros_from() {
-    let state = State::new();
+    let mut state = State::new("+".parse().unwrap());
     assert!(Predicate::ZerosFrom(0).check(&state));
     assert!(!Predicate::ZerosFrom(-1).check(&state));
     assert!(Predicate::ZerosFrom(1).check(&state));
 
-    let state = simulate_step(b"+", state);
+    state.step();
     assert!(!Predicate::ZerosFrom(0).check(&state));
     assert!(!Predicate::ZerosFrom(-1).check(&state));
     assert!(Predicate::ZerosFrom(1).check(&state));
@@ -489,25 +350,42 @@ fn test_imply_zeros_from() {
     assert!(!Predicate::ZerosFrom(2).implies(&Predicate::Equals(1, 0)));
 }
 
+#[test]
+fn test_weaken1() {
+    let predicate = Predicate::Equals(-2, 1);
+    let weaker = predicate.clone().weaken();
+    assert!(predicate.implies(&weaker));
+}
+
+#[test]
+fn test_weaken_and() {
+    let predicate = Predicate::All(vec![Predicate::Equals(-2, 1), Predicate::ZerosFrom(1)]);
+    let weaker = predicate.clone().weaken();
+    assert!(predicate.implies(&weaker));
+}
+
+#[test]
+fn test_weaken_or() {
+    let predicate = Predicate::Any(vec![Predicate::Equals(-2, 1), Predicate::ZerosFrom(1)]);
+    let weaker = predicate.clone().weaken();
+    assert!(predicate.implies(&weaker));
+}
+
 #[derive(Debug)]
 struct Proof {
     start_ip: usize,
     invariants: Vec<Predicate>
 }
 
-fn prove_starting_with_invariant(program: &[u8], state: &State, invariant: Predicate,
+fn prove_starting_with_invariant(state: &State, invariant: Predicate,
                                  verbose: bool) -> Option<Proof> {
-    if !invariant.check(state) {
-        return None;
-    }
+    if !invariant.check(state) { return None; }
+    let program = &state.program;
+    if verbose { println!("{}", program) } 
 
-    if verbose {
-        println!("{}", String::from_utf8(program.to_vec()).unwrap());
-    } 
-
-    let mut invariants = vec![Predicate::True; program.len()];
-    let mut visited = vec![false; program.len()];
-    let start_ip = state.ip;
+    let mut invariants = vec![Predicate::False; program.len() as usize];
+    let mut visited = vec![false; program.len() as usize];
+    let start_ip = state.ip as usize;
 
     let mut queue = VecDeque::new();
     queue.push_back((start_ip, invariant));
@@ -515,8 +393,8 @@ fn prove_starting_with_invariant(program: &[u8], state: &State, invariant: Predi
 
     while let Some((ip, invariant)) = queue.pop_front() {
         counter += 1;
-        if counter > 16 { return None; }
-        if ip >= program.len() {
+        if counter > 32 { return None; }
+        if ip >= program.len() as usize {
             // We reached the end of the program.
             return None;
         }
@@ -526,10 +404,10 @@ fn prove_starting_with_invariant(program: &[u8], state: &State, invariant: Predi
                 // We proved the current invariant.
                 continue;
             }
-            invariants[ip] = invariant.intersect(current_invariant);
             if verbose {
-                println!("{:?} ->", &invariant);
+                println!("old: {:?}, incoming: {:?}", current_invariant, invariant);
             }
+            invariants[ip] = invariant.intersect(current_invariant);
         } else {
             visited[ip] = true;
             invariants[ip] = invariant;
@@ -539,9 +417,10 @@ fn prove_starting_with_invariant(program: &[u8], state: &State, invariant: Predi
         }
 
         let current_invariant = &invariants[ip];
-        if program[ip] == LOOP {
+        if let Instruction::Loop(new_ip) = program[ip as u16] {
+            let new_ip = new_ip as usize;
             if current_invariant.implies(&Predicate::GreaterThan(0, 0)) {
-                queue.push_back((find_matching_label(program, ip), current_invariant.clone()));
+                queue.push_back((new_ip + 1, current_invariant.clone()));
             } else if current_invariant.implies(&Predicate::Equals(0, 0)) {
                 queue.push_back((ip + 1, current_invariant.clone()));
             } else {
@@ -550,11 +429,11 @@ fn prove_starting_with_invariant(program: &[u8], state: &State, invariant: Predi
                     vec![Predicate::GreaterThan(0, 0), current_invariant.clone()]).optimize();
                 let go_through_inv = Predicate::All(
                     vec![Predicate::Equals(0, 0), current_invariant.clone()]).optimize();
-                queue.push_back((find_matching_label(program, ip), jump_back_inv));
+                queue.push_back((new_ip + 1, jump_back_inv));
                 queue.push_back((ip + 1, go_through_inv));
             };
         } else {
-            let instruction = program[ip];
+            let instruction = program[ip as u16];
             queue.push_back((ip + 1, current_invariant.apply(instruction)))
         }
     }
@@ -594,54 +473,46 @@ fn prove_starting_with_invariant(program: &[u8], state: &State, invariant: Predi
 //     return None
 // }
 
-fn prove_from_start(program: &[u8], verbose: bool) -> Option<Proof> {
-    let state = State::new();
-    prove_starting_with_invariant(program, &state, Predicate::ZerosFrom(0), verbose)
+fn prove_from_start(program: Program, verbose: bool) -> Option<Proof> {
+    let state = State::new(program);
+    prove_starting_with_invariant(&state, Predicate::ZerosFrom(0), verbose)
 }
 
 #[test]
 fn test_simple_loop() {
-    let proof = prove_from_start(&[INC, LABEL, LOOP], true);
+    let proof = prove_from_start("+[]".parse().unwrap(), true);
     assert!(proof.is_some());
 }
 
 #[test]
 fn test_right_left() {
-    let p = &[INC, LABEL, RIGHT, LEFT, LOOP];
-    let proof = prove_from_start(p, true);
+    let proof = prove_from_start("+[><]".parse().unwrap(), true);
     assert!(proof.is_some());
 }
 
 #[test]
 fn test_right_right_left() {
-    let p = &[LABEL, RIGHT, RIGHT, LEFT, INC, LOOP];
-    let proof = prove_from_start(p, true);
+    let proof = prove_from_start("[>><+]".parse().unwrap(), true);
     assert!(proof.is_some());
-    dbg!(proof);
 }
 
 #[test]
 fn test_loop_with_init() {
-    let p = b"[[]+]";
-    let proof = prove_from_start(p, true);
+    let proof = prove_from_start("[[]+]".parse().unwrap(), true);
     assert!(proof.is_some());
-    dbg!(String::from_utf8(p.to_vec()).unwrap());
-    dbg!(proof.unwrap());
 }
 
 #[test]
 fn test_nested_loop() {
-    let p = b"+[[>]<]";
-    let proof = prove_from_start(p, true);
+    let proof = prove_from_start("+[[>]<]".parse().unwrap(), true);
     assert!(proof.is_some());
-    dbg!(proof);
 }
 
 #[test]
 fn test_composite_pred_apply() {
     let predicate = Predicate::All(vec![Predicate::ZerosFrom(1), Predicate::Equals(0, 1)]);
     let expected = Predicate::All(vec![Predicate::ZerosFrom(1), Predicate::Equals(0, 2)]);;
-    let next = predicate.apply(INC);
+    let next = predicate.apply(Instruction::Inc);
     assert!(next.implies(&expected));
     assert!(expected.implies(&next));
 }
@@ -650,29 +521,29 @@ fn test_composite_pred_apply() {
 fn test_zeros_apply_inc() {
     let predicate = Predicate::ZerosFrom(0);
     let expected = Predicate::All(vec![Predicate::ZerosFrom(1), Predicate::Equals(0, 1)]);
-    let next = predicate.apply(INC);
+    let next = predicate.apply(Instruction::Inc);
     dbg!(&next);
     assert!(next.implies(&expected));
     assert!(expected.implies(&next));
 }
 
-fn solve_for_program(program: &[u8], verbose: bool) -> State {
-    let mut state = simulate(program, 2000);
+fn solve_for_program(program: Program, verbose: bool) -> State {
+    let mut state = run(&program, 2000);
 
     if state.status == Status::Running {
         // let maybe_proof = prove_infinite(&p, &state);
         if verbose {
-            println!("{}", String::from_utf8(program.to_vec()).unwrap());
+            println!("{}", program);
         }
-        let maybe_proof = prove_from_start(program, verbose);
+        let maybe_proof = prove_from_start(program.clone(), verbose);
         if let Some(proof) = maybe_proof  {
             state.status = Status::Infinite;
             if verbose {
                 println!("{:?}", &proof.invariants[0]);
                 for i in 1..proof.invariants.len() {
-                    println!("{} {:?}", program[i-1] as char, proof.invariants[i])
+                    println!("{} {:?}", program[(i-1) as u16], proof.invariants[i])
                 }
-                println!("{}", program[program.len() - 1] as char);
+                println!("{}", program[program.len() - 1]);
             }                }
     } else {
         if verbose {
@@ -693,12 +564,12 @@ fn solve_for_len(l: usize) {
     let mut infinite = 0;
     let mut running = 0;
     let mut longest_run = 0;
-    let mut longest_running_program = String::new();
+    let mut longest_running_program = None;
     let mut longest_tape = 0;
-    let mut longest_tape_program = String::new();
+    let mut longest_tape_program = None;
 
     for p in gen_valid_programs(l) {
-        let state = solve_for_program(&p, false);
+        let state = solve_for_program(p.clone(), false);
 
         total_programs += 1;
         match state.status {
@@ -706,11 +577,11 @@ fn solve_for_len(l: usize) {
                 finished += 1;
                 if state.step > longest_run {
                     longest_run = state.step;
-                    longest_running_program = String::from_utf8(p.clone()).unwrap();
+                    longest_running_program = Some(p.clone());
                 }
                 if state.tape.len() > longest_tape {
                     longest_tape = state.tape.len();
-                    longest_tape_program = String::from_utf8(p.clone()).unwrap();
+                    longest_tape_program = Some(p.clone());
                 }
             },
             Status::TapeOverflow => tape_overflow += 1,
@@ -720,7 +591,7 @@ fn solve_for_len(l: usize) {
             },
             Status::Running => {
                 running += 1;
-                println!("Running: {}", String::from_utf8(p.clone()).unwrap());
+                println!("Running: {}", p);
             }
         };
     }
@@ -731,20 +602,20 @@ fn solve_for_len(l: usize) {
     println!("Value overflow: {}", value_overflow);
     println!("Proven infinite: {}", infinite);
     println!("Running: {}", running);
-    println!("Longest run: {} {}", longest_run, longest_running_program);
-    println!("Longest tape: {} {}", longest_tape, longest_tape_program);
+    println!("Longest run: {} {}", longest_run, longest_running_program.unwrap());
+    println!("Longest tape: {} {}", longest_tape, longest_tape_program.unwrap());
 }
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
-        solve_for_program(b"[[]>+]-", true);
+        solve_for_program("[[]>+]-".parse().unwrap(), true);
         return;
     }
     let arg: &str = &args[1];
     let len: usize = arg.parse().unwrap_or(0);
     if len == 0 {
-        solve_for_program(arg.as_bytes(), true);
+        solve_for_program(arg.parse().unwrap(), true);
     } else {
         solve_for_len(len)
     }
