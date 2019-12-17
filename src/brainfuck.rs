@@ -136,7 +136,7 @@ pub enum Status {
     TapeOverflow,
     ValueOverflow,
     Finished,
-    Infinite,
+    RunsForever,
 }
 
 #[derive(Clone, Debug)]
@@ -154,8 +154,17 @@ impl State {
         State { program, tape: vec![0], ip: 0, pos: 0, step: 0, status: Status::Running }
     }
 
-    pub fn val_at_offset(&self, offset: isize) -> u8 {
-        self.tape[(self.pos as isize + offset) as usize]
+    pub fn val_at_offset(&self, offset: isize) -> Option<u8> {
+        let address = self.pos as isize + offset;
+        if address < 0 {
+            return None;
+        }
+        let address = address as usize;
+        if address >= self.tape.len() {
+            Some(0)
+        } else {
+            Some(self.tape[address])
+        }
     }
 
     pub fn step(&mut self) {
@@ -202,7 +211,7 @@ impl State {
                 if self.tape[self.pos] == 0 {
                     self.ip += 1;
                 } else {
-                    self.ip = new_ip;
+                    self.ip = new_ip + 1;
                 }
             }
         };
@@ -217,6 +226,25 @@ impl State {
             if self.status != Status::Running { break; }
         }
     }    
+}
+
+impl fmt::Display for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{}", self.program)?;
+        for _ in 0..self.ip {
+            write!(f, " ")?;
+        }
+        writeln!(f, "^")?;
+        for i in 0..self.tape.len() {
+            if i == self.pos as usize {
+                write!(f, "[{}] ", self.tape[i])?;
+            } else {
+                write!(f, "{} ", self.tape[i])?;
+            }
+        }
+        writeln!(f, "...")?;
+        writeln!(f, "{:?} IP = {} pos = {} step = {}", self.status, self.ip, self.pos, self.step)
+    }
 }
 
 pub fn run(program: &Program, steps: usize) -> State {

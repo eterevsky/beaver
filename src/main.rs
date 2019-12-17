@@ -3,6 +3,8 @@ mod brainfuck;
 use crate::brainfuck::{Instruction, Program, State, Status, gen_valid_programs, run};
 use std::collections::VecDeque;
 use std::env;
+use std::fmt;
+
 
 #[derive(PartialEq, Debug, Clone)]
 enum Predicate {
@@ -122,8 +124,11 @@ impl Predicate {
                     ((start as usize)..state.tape.len()).all(|i| state.tape[i] == 0)
                 }
             },
-            Predicate::Equals(offset, x) => state.val_at_offset(*offset) == *x,
-            Predicate::GreaterThan(offset, x) => state.val_at_offset(*offset) > *x,
+            Predicate::Equals(offset, x) => state.val_at_offset(*offset) == Some(*x),
+            Predicate::GreaterThan(offset, x) => match state.val_at_offset(*offset) {
+                None => false,
+                Some(v) => v > *x,
+            },
             Predicate::All(children) => children.iter().all(|c| c.check(state)),
             Predicate::Any(children) => children.iter().any(|c| c.check(state)),
         }
@@ -419,10 +424,39 @@ fn test_weaken_or() {
     assert!(predicate.implies(&weaker));
 }
 
+#[test]
+fn test_composite_pred_apply() {
+    let predicate = Predicate::All(vec![Predicate::ZerosFrom(1), Predicate::Equals(0, 1)]);
+    let expected = Predicate::All(vec![Predicate::ZerosFrom(1), Predicate::Equals(0, 2)]);;
+    let next = predicate.apply(Instruction::Inc);
+    assert!(next.implies(&expected));
+    assert!(expected.implies(&next));
+}
+
+#[test]
+fn test_zeros_apply_inc() {
+    let predicate = Predicate::ZerosFrom(0);
+    let expected = Predicate::All(vec![Predicate::ZerosFrom(1), Predicate::Equals(0, 1)]);
+    let next = predicate.apply(Instruction::Inc);
+    dbg!(&next);
+    assert!(next.implies(&expected));
+    assert!(expected.implies(&next));
+}
+
 #[derive(Debug)]
 struct Proof {
-    start_ip: usize,
-    invariants: Vec<Predicate>
+    program: Program,
+    invariants: Vec<Predicate>,
+}
+
+impl fmt::Display for Proof {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "    {:?}", &self.invariants[0])?;
+        for i in 1..self.invariants.len() {
+            writeln!(f, "{}   {:?}", self.program[(i-1) as u16], self.invariants[i])?;
+        }
+        writeln!(f, "{}", self.program[self.program.len() - 1])
+    }
 }
 
 fn prove_starting_with_invariant(state: &State, invariant: Predicate,
@@ -486,131 +520,149 @@ fn prove_starting_with_invariant(state: &State, invariant: Predicate,
         }
     }
 
-    Some(Proof {
-        start_ip,
-        invariants,
-    })
+    Some(Proof { program: program.clone(), invariants })
 }
 
-//// Old solver, in which I try proving starting from different points in the program's execution.
-// fn prove_infinite(program: &[u8], state: &State) -> Option<Proof> {
-//     let mut starting_points = vec![false; program.len()];
-//     let mut state: State = (*state).clone();
-
-//     while !starting_points[state.ip] {
-//         starting_points[state.ip] = true;
-
-//         let try_invariants = vec![
-//             Predicate::GreaterThan(0, 0),
-//             Predicate::ZerosFrom(1),
-//             Predicate::Equals(0, state.tape[state.pos]),
-//             Predicate::All(vec![Predicate::ZerosFrom(1),
-//                                 Predicate::Equals(0, state.tape[state.pos])]),
-//         ];
-
-//         for invariant in try_invariants {
-//             let maybe_proof = prove_starting_with_invariant(program, &state, invariant);
-//             if maybe_proof.is_some() {
-//                 return maybe_proof;
-//             }
-//         }
-
-//         state = simulate_step(program, state);
-//     }
-
-//     return None
-// }
-
-fn prove_from_start(program: Program, verbose: bool) -> Option<Proof> {
+fn prove_runs_forever(program: Program, verbose: bool) -> Option<Proof> {
     let state = State::new(program);
     prove_starting_with_invariant(&state, Predicate::ZerosFrom(0), verbose)
 }
 
+/// Verify a proof by running the program and checking the predicate on every step.
+#[cfg(test)]
+fn verify_proof(proof: Option<Proof>) -> bool {
+    if !proof.is_some() { return false; }
+    let proof = proof.unwrap();
+    let mut state = State::new(proof.program.clone());
+    for _ in 0..1000 {
+        match state.status {
+            Status::TapeOverflow | Status::ValueOverflow => return true,
+            Status::Finished => {
+                println!("{}", &state);
+                println!("Program finished");
+                return false;
+            },
+            _ => ()
+        }
+        if !proof.invariants[state.ip as usize].check(&state) {
+            println!("IP = {}", state.ip);
+            println!("Invariant failed: {:?}", &proof.invariants[state.ip as usize]);
+            println!("{}", &state);
+            println!("{}", &proof);
+            return false;
+        }
+        state.step();
+    }
+    true
+}
+
+#[cfg(test)]
+fn test_program(prog_str: &str) {
+    let program: Program = prog_str.parse().unwrap();
+    let proof = prove_runs_forever(program.clone(), false);
+    assert!(verify_proof(proof));
+}
+
 #[test]
 fn test_simple_loop() {
-    let proof = prove_from_start("+[]".parse().unwrap(), true);
-    assert!(proof.is_some());
+    test_program("+[]");
 }
 
 #[test]
 fn test_right_left() {
-    let proof = prove_from_start("+[><]".parse().unwrap(), true);
-    assert!(proof.is_some());
+    test_program("+[><]");
 }
 
 #[test]
 fn test_right_right_left() {
-    let proof = prove_from_start("[>><+]".parse().unwrap(), true);
-    assert!(proof.is_some());
+    test_program("[>><+]");
 }
 
 #[test]
 fn test_loop_with_init() {
-    let proof = prove_from_start("[[]+]".parse().unwrap(), true);
-    assert!(proof.is_some());
+    test_program("[[]+]");
 }
 
 #[test]
 fn test_nested_loop() {
-    let proof = prove_from_start("+[[>]<]".parse().unwrap(), true);
-    assert!(proof.is_some());
+    test_program("+[[>]<]");
 }
 
-#[test]
-fn test_composite_pred_apply() {
-    let predicate = Predicate::All(vec![Predicate::ZerosFrom(1), Predicate::Equals(0, 1)]);
-    let expected = Predicate::All(vec![Predicate::ZerosFrom(1), Predicate::Equals(0, 2)]);;
-    let next = predicate.apply(Instruction::Inc);
-    assert!(next.implies(&expected));
-    assert!(expected.implies(&next));
-}
-
-#[test]
-fn test_zeros_apply_inc() {
-    let predicate = Predicate::ZerosFrom(0);
-    let expected = Predicate::All(vec![Predicate::ZerosFrom(1), Predicate::Equals(0, 1)]);
-    let next = predicate.apply(Instruction::Inc);
-    dbg!(&next);
-    assert!(next.implies(&expected));
-    assert!(expected.implies(&next));
-}
-
-fn solve_for_program(program: Program, verbose: bool) -> State {
+fn solve_program(program: Program) -> (State, Option<Proof>) {
     let mut state = run(&program, 5000);
 
     if state.status == Status::Running {
-        // let maybe_proof = prove_infinite(&p, &state);
-        if verbose {
-            println!("{}", program);
+        let maybe_proof = prove_runs_forever(program.clone(), false);
+        if maybe_proof.is_some() {
+            state.status = Status::RunsForever;
         }
-        let maybe_proof = prove_from_start(program.clone(), verbose);
-        if let Some(proof) = maybe_proof  {
-            state.status = Status::Infinite;
-            if verbose {
-                println!();
-                println!("{:?}", &proof.invariants[0]);
-                for i in 1..proof.invariants.len() {
-                    println!("{} {:?}", program[(i-1) as u16], proof.invariants[i])
-                }
-                println!("{}", program[program.len() - 1]);
-            }                }
+        (state, maybe_proof)
     } else {
-        if verbose {
-            println!("{:?}", state)
-        }
+        (state, None)
     }
-
-    state
 }
 
-fn solve_for_len(l: usize) {
+#[cfg(test)]
+fn test_len(l: usize, finishing: usize) {
+    let mut finished = 0;
+    for p in gen_valid_programs(l) {
+        let (state, proof) = solve_program(p.clone());
+        match state.status {
+            Status::Finished => finished += 1,
+            
+            Status::RunsForever => assert!(verify_proof(proof)),
+
+            Status::Running => panic!(),
+
+            _ => (),
+        }
+    }
+    assert_eq!(finished, finishing);
+}
+
+#[test]
+fn test1() {
+    test_len(1, 2);
+}
+
+#[test]
+fn test2() {
+    test_len(2, 7);
+}
+
+#[test]
+fn test3() {
+    test_len(3, 21);
+}
+
+#[test]
+fn test4() {
+    test_len(4, 79);
+}
+
+#[test]
+fn test5() {
+    test_len(5, 278);
+}
+
+#[test]
+fn test6() {
+    test_len(6, 1099);
+}
+
+#[test]
+fn test7() {
+    test_len(7, 4218);
+}
+
+fn solve_len(l: usize) {
     println!("\nLength {}", l);
 
     let mut total_programs = 0;
     let mut tape_overflow = 0;
     let mut value_overflow = 0;
     let mut finished = 0;
-    let mut infinite = 0;
+    let mut runs_forever = 0;
     let mut running = 0;
     let mut longest_run = 0;
     let mut longest_running_program = None;
@@ -618,7 +670,7 @@ fn solve_for_len(l: usize) {
     let mut longest_tape_program = None;
 
     for p in gen_valid_programs(l) {
-        let state = solve_for_program(p.clone(), false);
+        let (state, _) = solve_program(p.clone());
 
         total_programs += 1;
         match state.status {
@@ -635,8 +687,8 @@ fn solve_for_len(l: usize) {
             },
             Status::TapeOverflow => tape_overflow += 1,
             Status::ValueOverflow => value_overflow += 1,
-            Status::Infinite => {
-                infinite += 1;
+            Status::RunsForever => {
+                runs_forever += 1;
             },
             Status::Running => {
                 running += 1;
@@ -647,25 +699,25 @@ fn solve_for_len(l: usize) {
     println!();
     println!("Total programs: {}", total_programs);
     println!("Finished: {}", finished);
+    println!("Run forever: {}", runs_forever);
     println!("Overflow: tape {} + value {} = {}",
             tape_overflow, value_overflow, tape_overflow + value_overflow);
-    println!("Proven infinite: {}", infinite);
-    println!("Running: {}", running);
-    println!("Longest run: {} {}", longest_run, longest_running_program.unwrap());
-    println!("Longest tape: {} {}", longest_tape, longest_tape_program.unwrap());
+    println!("Unknown: {}", running);
+    println!("Longest run: {} {}", longest_running_program.unwrap(), longest_run);
+    println!("Longest tape: {} {}", longest_tape_program.unwrap(), longest_tape);
 }
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        solve_for_program("[[]>+]-".parse().unwrap(), true);
-        return;
-    }
     let arg: &str = &args[1];
     let len: usize = arg.parse().unwrap_or(0);
     if len == 0 {
-        solve_for_program(arg.parse().unwrap(), true);
+        let (state, proof) = solve_program(arg.parse().unwrap());
+        println!("{}", state);
+        if let Some(p) = proof {
+            println!("{}", p);
+        }
     } else {
-        solve_for_len(len)
+        solve_len(len)
     }
 }
