@@ -14,6 +14,15 @@ pub enum Instruction {
     Loop(u16),
 }
 
+impl Instruction {
+    pub fn is_loop(self) -> bool {
+        match self {
+            Instruction::Loop(_) => true,
+            _ => false,
+        }
+    }
+}
+
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let c = match *self {
@@ -154,6 +163,7 @@ impl State {
         State { program, tape: vec![0], ip: 0, pos: 0, step: 0, status: Status::Running }
     }
 
+    #[cfg(test)]
     pub fn val_at_offset(&self, offset: isize) -> Option<u8> {
         let address = self.pos as isize + offset;
         if address < 0 {

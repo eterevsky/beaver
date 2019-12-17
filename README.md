@@ -69,10 +69,12 @@ Number of programs per length:
 | 7      | 42'508      | 4'218      | 1'683       | 36'607      |           |
 | 8      | 218'318     | 17'293     | 9'430       | 191'595     |           |
 | 9      | 1'137'400   | 69'993     | 52'493      | 1'014'914   |           |
-| 10     | 5'996'938   | 295'042    | 289'278     | 5'412'596   | 22        |
-| 11     | 31'940'792  | 1'237'258  | 1'591'383   | 29'111'822  | 329       |
-| 12     | 171'605'956 | 5'329'766  | 8'739'440   | 157'532'192 | 4'558     |
-| 13     | 928'931'280 | 22'921'438 | 48'035'016  | 857'931'352 | 43'474    |
+| 10     | 5'996'938   | 295'042    | 289'300     | 5'412'596   |           |
+| 11     | 31'940'792  | 1'237'258  | 1'591'708   | 29'111'822  | 4         |
+| 12     | 171'605'956 | 5'329'766  | 8'743'744   | 157'532'378 | 68        |
+| 13*    | 928'931'280 | 22'921'438 | 48'035'016  | 857'931'352 | 43'474    |
+
+*Haven't run the last version of the program on this length.
 
 Beasy beavers:
 
@@ -92,27 +94,9 @@ Beasy beavers:
 | 12     | `[>++++[-<]>]` 54  | `>>>>>>>>>>>>` 13   |
 | 13     | `[>+++++[-<]>]` 73 | `>>>>>>>>>>>>>` 14  |
 
-Here are all the programs of length 10 for which `beaver` can't automatically prove they aren't stopping. For most of them it is quite clear that they run forever, and it's just due to `beaver`'s limited ability for finding proofs. 
+Here are all the programs of length 11 for which `beaver` can't automatically prove they aren't stopping. For most of them it is quite clear that they run forever, and it's just due to `beaver`'s limited ability for finding proofs. 
     
-    [[>>]+<<+]
-    [>[>]+<<+]
-    [>>[]+<<+]
-    [>[<][>]+]
-    >[[<][>]+]
-    +>>>[<[]+]
-    [[+>+-]+<]
-    [[+>><]+<]
-    [[+++>]+<]
-    [[+-+>]+<]
-    [[><+>]+<]
-    [[++->]+<]
-    [[+><>]+<]
-    >[+<[>]+<]
-    >+[<[>]+<]
-    [[+>>]+<<]
-    [+[>>]+<<]
-    [+>>[]+<<]
-    [+[>+<-]>]
-    [+[->+<]>]
-    [[>][+<]>]
-    [[>]+[<]>]
+    +>[[+>]+<<]
+    +>>>[[]<<<]
+    +>+>>[<[]<]
+    +>>+>[<]<[]

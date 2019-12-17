@@ -112,6 +112,7 @@ impl Predicate {
         }
     }
 
+    #[cfg(test)]
     fn check(&self, state: &State) -> bool {
         match self {
             Predicate::True => true,
@@ -332,11 +333,11 @@ impl Predicate {
     }
 
     // Construct a weaker version of the predicate by modifying all the predicates with offset
-    // farther than +/-1.
+    // farther than +/-2.
     fn weaken(self) -> Self {
         match self {
-            Predicate::Equals(offset, _) if offset < -2 || offset > 1 => Predicate::True,
-            Predicate::GreaterThan(offset, _) if offset < -2 || offset > 1 => Predicate::True,
+            Predicate::Equals(offset, _) if offset < -2 || offset > 2 => Predicate::True,
+            Predicate::GreaterThan(offset, _) if offset < -2 || offset > 2 => Predicate::True,
             Predicate::All(mut children) =>
                 Predicate::All(children.drain(..).map(|c| c.weaken()).collect()).optimize(),
             Predicate::Any(mut children) =>
@@ -459,15 +460,23 @@ impl fmt::Display for Proof {
     }
 }
 
-fn prove_starting_with_invariant(state: &State, invariant: Predicate,
-                                 verbose: bool) -> Option<Proof> {
-    if !invariant.check(state) { return None; }
-    let program = &state.program;
-    if verbose { println!("{}", program) } 
-
+fn prove_from_ip(program: Program, start_ip: usize, verbose: bool) -> Option<Proof> {
+    assert!(start_ip < program.len());
+    if verbose { println!("{}", program) }
     let mut invariants = vec![Predicate::False; program.len()];
     let mut visited = vec![false; program.len()];
-    let start_ip = state.ip;
+    for i in 0..start_ip {
+        invariants[i] = Predicate::True;
+        visited[i] = true;
+    }
+
+    let invariant = if start_ip == 0 {
+        Predicate::ZerosFrom(0)
+    } else if program[start_ip - 1].is_loop() {
+        Predicate::Equals(0, 0)
+    } else {
+        Predicate::True
+    };
 
     let mut queue = VecDeque::new();
     queue.push_back((start_ip, invariant));
@@ -520,12 +529,21 @@ fn prove_starting_with_invariant(state: &State, invariant: Predicate,
         }
     }
 
-    Some(Proof { program: program.clone(), invariants })
+    Some(Proof { program, invariants })
 }
 
-fn prove_runs_forever(program: Program, verbose: bool) -> Option<Proof> {
-    let state = State::new(program);
-    prove_starting_with_invariant(&state, Predicate::ZerosFrom(0), verbose)
+fn prove_runs_forever(program: Program) -> Option<Proof> {
+    for ip in (0..program.len()).rev() {
+        if ip == 0 ||
+           program[ip - 1].is_loop() || 
+           program[ip] == Instruction::Inc {
+            let maybe_proof = prove_from_ip(program.clone(), ip, false);
+            if maybe_proof.is_some() {
+                return maybe_proof;
+            }
+        }
+    }
+    None
 }
 
 /// Verify a proof by running the program and checking the predicate on every step.
@@ -559,7 +577,7 @@ fn verify_proof(proof: Option<Proof>) -> bool {
 #[cfg(test)]
 fn test_program(prog_str: &str) {
     let program: Program = prog_str.parse().unwrap();
-    let proof = prove_runs_forever(program.clone(), false);
+    let proof = prove_runs_forever(program.clone());
     assert!(verify_proof(proof));
 }
 
@@ -592,7 +610,7 @@ fn solve_program(program: Program) -> (State, Option<Proof>) {
     let mut state = run(&program, 5000);
 
     if state.status == Status::Running {
-        let maybe_proof = prove_runs_forever(program.clone(), false);
+        let maybe_proof = prove_runs_forever(program.clone());
         if maybe_proof.is_some() {
             state.status = Status::RunsForever;
         }
