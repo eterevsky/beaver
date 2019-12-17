@@ -453,7 +453,7 @@ impl fmt::Display for Proof {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "    {:?}", &self.invariants[0])?;
         for i in 1..self.invariants.len() {
-            writeln!(f, "{}   {:?}", self.program[(i-1) as u16], self.invariants[i])?;
+            writeln!(f, "{}   {:?}", self.program[i-1], self.invariants[i])?;
         }
         writeln!(f, "{}", self.program[self.program.len() - 1])
     }
@@ -465,9 +465,9 @@ fn prove_starting_with_invariant(state: &State, invariant: Predicate,
     let program = &state.program;
     if verbose { println!("{}", program) } 
 
-    let mut invariants = vec![Predicate::False; program.len() as usize];
-    let mut visited = vec![false; program.len() as usize];
-    let start_ip = state.ip as usize;
+    let mut invariants = vec![Predicate::False; program.len()];
+    let mut visited = vec![false; program.len()];
+    let start_ip = state.ip;
 
     let mut queue = VecDeque::new();
     queue.push_back((start_ip, invariant));
@@ -476,7 +476,7 @@ fn prove_starting_with_invariant(state: &State, invariant: Predicate,
     while let Some((ip, invariant)) = queue.pop_front() {
         counter += 1;
         if counter > 64 { return None; }
-        if ip >= program.len() as usize {
+        if ip >= program.len() {
             // We reached the end of the program.
             return None;
         }
@@ -499,7 +499,7 @@ fn prove_starting_with_invariant(state: &State, invariant: Predicate,
         }
 
         let current_invariant = &invariants[ip];
-        if let Instruction::Loop(new_ip) = program[ip as u16] {
+        if let Instruction::Loop(new_ip) = program[ip] {
             let new_ip = new_ip as usize;
             if current_invariant.implies(&Predicate::GreaterThan(0, 0)) {
                 queue.push_back((new_ip + 1, current_invariant.clone()));
@@ -515,7 +515,7 @@ fn prove_starting_with_invariant(state: &State, invariant: Predicate,
                 queue.push_back((ip + 1, go_through_inv));
             };
         } else {
-            let instruction = program[ip as u16];
+            let instruction = program[ip];
             queue.push_back((ip + 1, current_invariant.apply(instruction)))
         }
     }
@@ -544,9 +544,9 @@ fn verify_proof(proof: Option<Proof>) -> bool {
             },
             _ => ()
         }
-        if !proof.invariants[state.ip as usize].check(&state) {
+        if !proof.invariants[state.ip].check(&state) {
             println!("IP = {}", state.ip);
-            println!("Invariant failed: {:?}", &proof.invariants[state.ip as usize]);
+            println!("Invariant failed: {:?}", &proof.invariants[state.ip]);
             println!("{}", &state);
             println!("{}", &proof);
             return false;

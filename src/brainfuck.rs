@@ -34,14 +34,14 @@ pub struct Program {
 }
 
 impl Program {
-    pub fn len(&self) -> u16 { self.instructions.len() as u16 }
+    pub fn len(&self) -> usize { self.instructions.len() }
 }
 
-impl Index<u16> for Program {
+impl Index<usize> for Program {
     type Output = Instruction;
 
-    fn index(&self, i: u16) -> &Self::Output {
-        &self.instructions[i as usize]
+    fn index(&self, i: usize) -> &Self::Output {
+        &self.instructions[i]
     }
 }
 
@@ -69,7 +69,7 @@ impl FromStr for Program {
                             _ => 0,
                         };
                     }
-                    Instruction::Loop(ip)
+                    Instruction::Loop(ip as u16)
                 },
                 _ => return Err(())
             };
@@ -143,7 +143,7 @@ pub enum Status {
 pub struct State {
     pub program: Program,
     pub tape: Vec<u8>,
-    pub ip: u16,
+    pub ip: usize,
     pub pos: usize,
     pub step: usize,
     pub status: Status,
@@ -211,7 +211,7 @@ impl State {
                 if self.tape[self.pos] == 0 {
                     self.ip += 1;
                 } else {
-                    self.ip = new_ip + 1;
+                    self.ip = new_ip as usize + 1;
                 }
             }
         };
@@ -236,7 +236,7 @@ impl fmt::Display for State {
         }
         writeln!(f, "^")?;
         for i in 0..self.tape.len() {
-            if i == self.pos as usize {
+            if i == self.pos {
                 write!(f, "[{}] ", self.tape[i])?;
             } else {
                 write!(f, "{} ", self.tape[i])?;
