@@ -330,8 +330,8 @@ impl Predicate {
     // farther than +/-1.
     fn weaken(self) -> Self {
         match self {
-            Predicate::Equals(offset, _) if offset < -1 || offset > 1 => Predicate::True,
-            Predicate::GreaterThan(offset, _) if offset < -1 || offset > 1 => Predicate::True,
+            Predicate::Equals(offset, _) if offset < -2 || offset > 1 => Predicate::True,
+            Predicate::GreaterThan(offset, _) if offset < -2 || offset > 1 => Predicate::True,
             Predicate::All(mut children) =>
                 Predicate::All(children.drain(..).map(|c| c.weaken()).collect()).optimize(),
             Predicate::Any(mut children) =>
