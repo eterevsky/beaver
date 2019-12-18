@@ -44,6 +44,14 @@ pub struct Program {
 
 impl Program {
     pub fn len(&self) -> usize { self.instructions.len() }
+
+    pub fn push(&mut self, instruction: Instruction) {
+        self.instructions.push(instruction)
+    }
+
+    pub fn pop(&mut self) {
+        self.instructions.pop();
+    }
 }
 
 impl Index<usize> for Program {
@@ -97,8 +105,10 @@ impl fmt::Display for Program {
     }
 }
 
+#[cfg(test)]
 static INSTRUCTIONS: &'static [u8] = &[b'+', b'-', b'<', b'>', b'[', b']'];
 
+#[cfg(test)]
 pub fn gen_valid_programs(len: usize) -> Vec<Program> {
     let mut programs = Vec::new();
     for mut pcode in 0..6usize.pow(len as u32) {
