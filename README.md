@@ -7,7 +7,7 @@ This project tries to achieve the following goals:
 * Find the shortest Brainfuck program, for which we can't tell whether it stops or not.
 * Find the Busy Beaver Brainfuck programs for various lengths: the programs that take the most steps or touch the most cells, and then ultimatelty stop.
 
-See [results](#results) below. Spoiler: nothing interesting is happening at least up to length 9.
+See [results](#results) below. Spoiler: we ran all programs up to length 14 and solved halting problem for all programs up to length 10.
 
 ## Usage
 
@@ -44,6 +44,8 @@ If we ever reach the end of the program in any branch of execution, the we've fa
 
 ## Dialect of Brainfuck
 
+**`[ ]` is interpreted as a `do { } while` loop, not `while {}`**, i.e. it always goes through the loop at least once. I only became aware that that's not how Brainfuck work, after I wrote this. TODO: Use common conventions.
+
 The Brainfuck programs that we examine do not have any input or output.
 
 To exclude some uninteresting long-running programs we use a pretty restrictive version of Brainfuck:
@@ -58,39 +60,43 @@ The prover assumes that all the operations are successful, so the proof of non-s
 
 Number of programs per length:
 
-| Length | Total       | Finishing  | Run forever | Overflow    | Unknown   |
-| ------ | ----------- | ---------- | ----------- | ----------- | --------- |
-| 1      | 4           | 2          |             | 2           |           |
-| 2      | 17          | 7          |             | 10          |           |
-| 3      | 76          | 21         | 1           | 54          |           |
-| 4      | 354         | 79         | 7           | 268         |           |
-| 5      | 1'704       | 278        | 49          | 1'377       |           |
-| 6      | 8'421       | 1'099      | 289         | 7'033       |           |
-| 7      | 42'508      | 4'218      | 1'683       | 36'607      |           |
-| 8      | 218'318     | 17'293     | 9'430       | 191'595     |           |
-| 9      | 1'137'400   | 69'993     | 52'493      | 1'014'914   |           |
-| 10     | 5'996'938   | 295'042    | 289'300     | 5'412'596   |           |
-| 11     | 31'940'792  | 1'237'258  | 1'591'708   | 29'111'822  | 4         |
-| 12     | 171'605'956 | 5'329'766  | 8'743'744   | 157'532'378 | 68        |
-| 13     | 928'931'280 | 22'921'438 | 48'076'036  | 857'932'740 | 1'066     |
+| Length | Total          | Finishing   | Run forever   | Overflow       | Unknown   |
+| ------ | -------------- | ----------- | ------------- | -------------- | --------- |
+| 1      | 4              | 2           |               | 2              |           |
+| 2      | 17             | 7           |               | 10             |           |
+| 3      | 76             | 21          | 1             | 54             |           |
+| 4      | 354            | 79          | 7             | 268            |           |
+| 5      | 1'704          | 278         | 49            | 1'377          |           |
+| 6      | 8'421          | 1'099       | 289           | 7'033          |           |
+| 7      | 42'508         | 4'218       | 1'683         | 36'607         |           |
+| 8      | 218'318        | 17'293      | 9'430         | 191'595        |           |
+| 9      | 1'137'400      | 69'993      | 52'493        | 1'014'914      |           |
+| 10     | 5'996'938      | 295'042     | 289'300       | 5'412'596      |           |
+| 11     | 31'940'792     | 1'237'258   | 1'591'708     | 29'111'822     | 4         |
+| 12     | 171'605'956    | 5'329'766   | 8'743'744     | 157'532'378    | 68        |
+| 13     | 928'931'280    | 22'921'438  | 48'076'036    | 857'932'740    | 1'066     |
+| 14     | 5'061'593'709  | 100'453'313 | 264'688'817   | 4'696'441'267  | 10'312    |
+| 15     | 27'739'833'228 | 440'246'145 | 1'460'355'347 | 25'839'139'190 | 92'546    |
 
 Beasy beavers:
 
-| Length | Longest running    | Touching most cells |
-| ------ | ------------------ | ------------------- |
-| 1      | `+` 1              | `>` 2               |
-| 2      | `++` 2             | `>>` 3              |
-| 3      | `+++` 3            | `>>>` 4             |
-| 4      | `++++` 4           | `>>>>` 5            |
-| 5      | `++[-]` 7          | `>>>>>` 6           |
-| 6      | `+++[-]` 10        | `>>>>>>` 7          |
-| 7      | `++++[-]` 13       | `>>>>>>>` 8         |
-| 8      | `+++++[-]` 16      | `>>>>>>>>` 9        |
-| 9      | `++++[-+-]` 21     | `>>>>>>>>>` 10      |
-| 10     | `+++++[-+-]` 26    | `>>>>>>>>>>` 11     |
-| 11     | `[>+++[-<]>]` 37   | `>>>>>>>>>>>` 12    |
-| 12     | `[>++++[-<]>]` 54  | `>>>>>>>>>>>>` 13   |
-| 13     | `[>+++++[-<]>]` 73 | `>>>>>>>>>>>>>` 14  |
+| Length | Longest running        | Touching most cells  |
+| ------ | ---------------------- | -------------------- |
+| 1      | `+` 1                  | `>` 2                |
+| 2      | `++` 2                 | `>>` 3               |
+| 3      | `+++` 3                | `>>>` 4              |
+| 4      | `++++` 4               | `>>>>` 5             |
+| 5      | `++[-]` 7              | `>>>>>` 6            |
+| 6      | `+++[-]` 10            | `>>>>>>` 7           |
+| 7      | `++++[-]` 13           | `>>>>>>>` 8          |
+| 8      | `+++++[-]` 16          | `>>>>>>>>` 9         |
+| 9      | `++++[-+-]` 21         | `>>>>>>>>>` 10       |
+| 10     | `+++++[-+-]` 26        | `>>>>>>>>>>` 11      |
+| 11     | `[>+++[-<]>]` 37       | `>>>>>>>>>>>` 12     |
+| 12     | `[>++++[-<]>]` 54      | `>>>>>>>>>>>>` 13    |
+| 13     | `[>+++++[-<]>]` 73     | `>>>>>>>>>>>>>` 14   |
+| 14     | `>+[>+++[-<]>>]` 110   | `>>>>>>>>>>>>>>` 15  |
+| 15     | `[>++>+++[-<]>>]` 1529 | `>>>>>>>>>>>>>>>` 16 |
 
 Here are all the programs of length 11 for which `beaver` can't automatically prove they aren't stopping. For most of them it is quite clear that they run forever, and it's just due to `beaver`'s limited ability for finding proofs. 
     
