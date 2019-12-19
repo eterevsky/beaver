@@ -9,13 +9,14 @@ pub enum Instruction {
     Dec,
     Left,
     Right,
-    Label,
-    /// The value is the address of the label to which we jump.
-    Loop(u16),
+    // Conditional jump. The value is offset of the target from the current IP.
+    // Encodes both [ and ], depending on the sign of the offset. The offset is targeted at the next
+    // operation after the paired [].
+    Jump(i8)
 }
 
 impl Instruction {
-    pub fn is_loop(self) -> bool {
+    pub fn is_jump(self) -> bool {
         match self {
             Instruction::Loop(_) => true,
             _ => false,
@@ -30,8 +31,8 @@ impl fmt::Display for Instruction {
             Instruction::Dec => '-',
             Instruction::Left => '<',
             Instruction::Right => '>',
-            Instruction::Label => '[',
-            Instruction::Loop(_) => ']',
+            Instruction::Jump(x) if x >= 0 => '[',
+            Instruction::Jump(x) if x < 0 => ']',
         };
         write!(f, "{}", c)
     }
@@ -45,11 +46,27 @@ pub struct Program {
 impl Program {
     pub fn len(&self) -> usize { self.instructions.len() }
 
+    // If instruction is a jump, the offset should be either 0 for jump forward or -1 for
+    // jump backwards. This method will handle the correct pairing of [].
     pub fn push(&mut self, instruction: Instruction) {
-        self.instructions.push(instruction)
+        if let Instruction::Jump(delta) = instruction && delta < 0 {
+            let l = self.instructions.len();
+            for i in (0..l).rev() {
+                if self.instructions[i] == Instruction::Jump(0) {
+                    self.instructions.push(Instruction::Jump(i - l));
+                    self.instructions[i] = Instruction::Jump(l - i + 1);
+                }
+            }
+        } else {
+            self.instructions.push(instruction)
+        }
     }
 
     pub fn pop(&mut self) {
+        let l = self.instructions.len();
+        if let Instruction::Jump(delta) = self.instructions[l-1] && delta < 0 {
+            self.instructions[l - 1 + delta] = Instruction::Jump(0);
+        }
         self.instructions.pop();
     }
 }
