@@ -269,8 +269,6 @@ impl Predicate {
     // Recursively apply the instruction.  
     fn apply_impl(&self, instruction: Instruction) -> Self {
         match (instruction, self.clone()) {
-            (Instruction::Label, p) => p,
-
             (i, Predicate::All(children)) => 
                 Predicate::All(children.iter().map(|c| c.apply_impl(i)).collect()).optimize(),
 
@@ -357,6 +355,33 @@ impl Predicate {
         } else {
             predicate
         } 
+    }
+
+    fn step(&self, program: &Program, ip: usize) -> ((Self, usize), Option<(Self, usize)>) {
+        assert!(ip < program.len());
+        match program[ip] {
+            Instruction::Forward(target) => {
+                if self.implies(&Predicate::GreaterThan(0, 0)) {
+                    ((self.clone(), ip + 1), None)   
+                } else if self.implies(&Predicate::Equals(0, 0)) {
+                    ((self.clone(), target), None)
+                } else {
+                    ((Predicate::All(vec![self.clone(), Predicate::GreaterThan(0, 0)]).optimize(), ip + 1),
+                     Some((Predicate::All(vec![self.clone(), Predicate::Equals(0, 0)]).optimize(), target)))
+                }
+            },
+            Instruction::Backward(target) => {
+                if self.implies(&Predicate::GreaterThan(0, 0)) {
+                    ((self.clone(), target), None)   
+                } else if self.implies(&Predicate::Equals(0, 0)) {
+                    ((self.clone(), ip + 1), None)
+                } else {
+                    ((Predicate::All(vec![self.clone(), Predicate::GreaterThan(0, 0)]).optimize(), target),
+                     Some((Predicate::All(vec![self.clone(), Predicate::Equals(0, 0)]).optimize(), ip + 1)))
+                }
+            },
+            instruction => ((self.apply(instruction), ip + 1), None)
+        }
     }
 
     // Find a predicate that follows from both self and other.
@@ -462,19 +487,17 @@ impl fmt::Display for Proof {
     }
 }
 
-fn prove_from_ip(program: Program, start_ip: usize, verbose: bool) -> Option<Proof> {
+fn prove_from_ip(program: &Program, start_ip: usize, verbose: bool) -> Option<Proof> {
     assert!(start_ip < program.len());
     if verbose { println!("{}", program) }
     let mut invariants = vec![Predicate::False; program.len()];
-    let mut visited = vec![false; program.len()];
     for i in 0..start_ip {
         invariants[i] = Predicate::True;
-        visited[i] = true;
     }
 
     let invariant = if start_ip == 0 {
         Predicate::ZerosFrom(0)
-    } else if program[start_ip - 1].is_loop() {
+    } else if program[start_ip - 1].is_backward() {
         Predicate::Equals(0, 0)
     } else {
         Predicate::True
@@ -491,55 +514,40 @@ fn prove_from_ip(program: Program, start_ip: usize, verbose: bool) -> Option<Pro
             // We reached the end of the program.
             return None;
         }
-        if visited[ip] {
-            let current_invariant = &invariants[ip];
-            if invariant.implies(current_invariant) {
-                // We proved the current invariant.
-                continue;
-            }
-            if verbose {
-                println!("old: {:?}, incoming: {:?}", current_invariant, invariant);
-            }
-            invariants[ip] = invariant.intersect(current_invariant);
-        } else {
-            visited[ip] = true;
-            invariants[ip] = invariant;
+        let old_invariant = &invariants[ip];
+        if invariant.implies(old_invariant) {
+            // We proved the current invariant.
+            continue;
         }
+        if verbose {
+            println!("old: {:?}, incoming: {:?}", old_invariant, invariant);
+        }
+        invariants[ip] = invariant.intersect(old_invariant);
+        let current_invariant = &invariants[ip];
         if verbose {
             println!("invariant[{}] = {:?}", ip, invariants[ip]);
         }
 
-        let current_invariant = &invariants[ip];
-        if let Instruction::Loop(new_ip) = program[ip] {
-            let new_ip = new_ip as usize;
-            if current_invariant.implies(&Predicate::GreaterThan(0, 0)) {
-                queue.push_back((new_ip + 1, current_invariant.clone()));
-            } else if current_invariant.implies(&Predicate::Equals(0, 0)) {
-                queue.push_back((ip + 1, current_invariant.clone()));
-            } else {
-                // Both cases can take place.
-                let jump_back_inv = Predicate::All(
-                    vec![Predicate::GreaterThan(0, 0), current_invariant.clone()]).optimize();
-                let go_through_inv = Predicate::All(
-                    vec![Predicate::Equals(0, 0), current_invariant.clone()]).optimize();
-                queue.push_back((new_ip + 1, jump_back_inv));
-                queue.push_back((ip + 1, go_through_inv));
-            };
-        } else {
-            let instruction = program[ip];
-            queue.push_back((ip + 1, current_invariant.apply(instruction)))
+        let ((new_invariant, new_ip), maybe_other) = current_invariant.step(program, ip);
+        queue.push_back((new_ip, new_invariant));
+        if let Some((new_inv2, new_ip2)) = maybe_other {
+            queue.push_back((new_ip2, new_inv2))
         }
     }
 
-    Some(Proof { program, invariants })
+    Some(Proof { program: program.clone(), invariants })
 }
 
-fn prove_runs_forever(program: Program) -> Option<Proof> {
+fn prove_runs_forever(program: &Program) -> Option<Proof> {
+    let mut nesting = 0;
     for ip in (0..program.len()).rev() {
-        if ip == 0 ||
-           program[ip - 1].is_loop() || 
-           program[ip] == Instruction::Inc {
-            let maybe_proof = prove_from_ip(program.clone(), ip, false);
+        nesting += match program[ip] {
+            Instruction::Backward(_) => 1,
+            Instruction::Forward(_) => -1,
+            _ => 0,
+        };
+        if ip == 0 || (nesting == 0 && program[ip - 1].is_backward()) {
+            let maybe_proof = prove_from_ip(program, ip, false);
             if maybe_proof.is_some() {
                 return maybe_proof;
             }
@@ -579,7 +587,8 @@ fn verify_proof(proof: Option<Proof>) -> bool {
 #[cfg(test)]
 fn test_program(prog_str: &str) {
     let program: Program = prog_str.parse().unwrap();
-    let proof = prove_runs_forever(program.clone());
+    let proof = prove_runs_forever(&program);
+    dbg!(&proof);
     assert!(verify_proof(proof));
 }
 
@@ -595,12 +604,12 @@ fn test_right_left() {
 
 #[test]
 fn test_right_right_left() {
-    test_program("[>><+]");
+    test_program("+[>><+]");
 }
 
 #[test]
 fn test_loop_with_init() {
-    test_program("[[]+]");
+    test_program("+[[]+]");
 }
 
 #[test]
@@ -608,11 +617,11 @@ fn test_nested_loop() {
     test_program("+[[>]<]");
 }
 
-fn solve_program(program: Program) -> (State, Option<Proof>) {
-    let mut state = run(&program, 5000);
+fn solve_program(program: &Program) -> (State, Option<Proof>) {
+    let mut state = run(program, 5000);
 
     if state.status == Status::Running {
-        let maybe_proof = prove_runs_forever(program.clone());
+        let maybe_proof = prove_runs_forever(program);
         if maybe_proof.is_some() {
             state.status = Status::RunsForever;
         }
@@ -626,7 +635,7 @@ fn solve_program(program: Program) -> (State, Option<Proof>) {
 fn test_len(l: usize, finishing: usize) {
     let mut finished = 0;
     for p in gen_valid_programs(l) {
-        let (state, proof) = solve_program(p.clone());
+        let (state, proof) = solve_program(&p);
         match state.status {
             Status::Finished => finished += 1,
             
@@ -655,27 +664,27 @@ fn test2() {
 
 #[test]
 fn test3() {
-    test_len(3, 21);
+    test_len(3, 24);
 }
 
 #[test]
 fn test4() {
-    test_len(4, 79);
+    test_len(4, 98);
 }
 
 #[test]
 fn test5() {
-    test_len(5, 278);
+    test_len(5, 413);
 }
 
 #[test]
 fn test6() {
-    test_len(6, 1099);
+    test_len(6, 1871);
 }
 
 #[test]
 fn test7() {
-    test_len(7, 4218);
+    test_len(7, 8740);
 }
 
 #[derive(Debug)]
@@ -709,8 +718,8 @@ impl Stats {
     }
 }
 
-fn program_stats(program: Program) -> Stats {
-    let (state, _) = solve_program(program.clone());
+fn program_stats(program: &Program) -> Stats {
+    let (state, _) = solve_program(program);
     
     let mut finished = 0;
     let mut run_forever = 0;
@@ -746,18 +755,18 @@ const NPROGRAMS: &[u64] = &[
     1, 4, 17, 76, 354, 1704, 8421, 42508, 218318, 1137400, 5996938, 31940792,
     171605956, 928931280, 5061593709, 27739833228];
 
-fn gen_and_solve(len: usize, prefix: &Program, opened_loops: &mut Vec<usize>) -> Stats {
-    if prefix.len() + opened_loops.len() == len {
+fn gen_and_solve(len: usize, prefix: &Program, opened_loops: usize) -> Stats {
+    if prefix.len() + opened_loops == len {
         let mut program = prefix.clone();
         // Just one possible program
-        for label_ip in opened_loops.iter().rev() {
-            program.push(Instruction::Loop(*label_ip as u16));
+        for _ in 0..opened_loops {
+            program.push(Instruction::Backward(0));
         }
-        return program_stats(program);
+        return program_stats(&program);
     }
 
-    if opened_loops.is_empty() && prefix.len() != 0 {
-        let (state, _) = solve_program(prefix.clone());
+    if opened_loops == 0 && prefix.len() != 0 {
+        let (state, _) = solve_program(prefix);
         if state.status != Status::Finished {
             let nprograms = NPROGRAMS[len - prefix.len()];
             let (run_forever, overflow, unknown) = match state.status {
@@ -796,19 +805,16 @@ fn gen_and_solve(len: usize, prefix: &Program, opened_loops: &mut Vec<usize>) ->
     stats.merge(gen_and_solve(len, &program, opened_loops));
     program.pop();
 
-    if len - prefix.len() >= opened_loops.len() + 2 {
-        opened_loops.push(prefix.len());
-        program.push(Instruction::Label);
-        stats.merge(gen_and_solve(len, &program, opened_loops));
+    if len - prefix.len() >= opened_loops + 2 {
+        program.push(Instruction::Forward(0));
+        stats.merge(gen_and_solve(len, &program, opened_loops + 1));
         program.pop();
-        opened_loops.pop();
     }
 
-    if let Some(label_ip) = opened_loops.pop() {
-        program.push(Instruction::Loop(label_ip as u16));
-        stats.merge(gen_and_solve(len, &program, opened_loops));
+    if opened_loops > 0 {
+        program.push(Instruction::Backward(0));
+        stats.merge(gen_and_solve(len, &program, opened_loops - 1));
         program.pop();
-        opened_loops.push(label_ip);
     }
 
     stats
@@ -816,10 +822,10 @@ fn gen_and_solve(len: usize, prefix: &Program, opened_loops: &mut Vec<usize>) ->
 
 #[test]
 fn test7_gen() {
-    let stats = gen_and_solve(7, &"".parse().unwrap(), &mut vec![]);
+    let stats = gen_and_solve(7, &"".parse().unwrap(), 0);
     assert_eq!(stats.total, 42508);
-    assert_eq!(stats.finished, 4218);
-    assert_eq!(stats.run_forever + stats.overflow, 1683 + 36607);
+    assert_eq!(stats.finished, 8740);
+    assert_eq!(stats.run_forever + stats.overflow, 1208 + 32560);
     assert_eq!(stats.unknown, 0);
     assert_eq!(stats.longest_run, 13);
     assert_eq!(stats.longest_tape, 8);
@@ -829,7 +835,7 @@ fn solve_len(len: usize) {
     println!("Length {}", len);
     println!("Total programs: {}\n", NPROGRAMS[len]);
 
-    let stats = gen_and_solve(len, &"".parse().unwrap(), &mut vec![]);
+    let stats = gen_and_solve(len, &"".parse().unwrap(), 0);
     println!("\nTotal: {}", stats.total);
     println!("Finished: {}", stats.finished);
     println!("Run forever: {}", stats.run_forever);
@@ -844,7 +850,9 @@ fn main() {
     let arg: &str = &args[1];
     let len: usize = arg.parse().unwrap_or(0);
     if len == 0 {
-        let (state, proof) = solve_program(arg.parse().unwrap());
+        let program = arg.parse().unwrap();
+        dbg!(&program);
+        let (state, proof) = solve_program(&program);
         println!("{}", state);
         if let Some(p) = proof {
             println!("{}", p);

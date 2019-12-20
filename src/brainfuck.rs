@@ -9,16 +9,15 @@ pub enum Instruction {
     Dec,
     Left,
     Right,
-    // Conditional jump. The value is offset of the target from the current IP.
-    // Encodes both [ and ], depending on the sign of the offset. The offset is targeted at the next
-    // operation after the paired [].
-    Jump(i8)
+    // Forward(0) is a placeholder when we don't yet know the address to which we are jumping.
+    Forward(usize),
+    Backward(usize),
 }
 
 impl Instruction {
-    pub fn is_jump(self) -> bool {
+    pub fn is_backward(self) -> bool {
         match self {
-            Instruction::Loop(_) => true,
+            Instruction::Backward(_) => true,
             _ => false,
         }
     }
@@ -31,8 +30,8 @@ impl fmt::Display for Instruction {
             Instruction::Dec => '-',
             Instruction::Left => '<',
             Instruction::Right => '>',
-            Instruction::Jump(x) if x >= 0 => '[',
-            Instruction::Jump(x) if x < 0 => ']',
+            Instruction::Forward(_) => '[',
+            Instruction::Backward(_) => ']',
         };
         write!(f, "{}", c)
     }
@@ -49,12 +48,14 @@ impl Program {
     // If instruction is a jump, the offset should be either 0 for jump forward or -1 for
     // jump backwards. This method will handle the correct pairing of [].
     pub fn push(&mut self, instruction: Instruction) {
-        if let Instruction::Jump(delta) = instruction && delta < 0 {
-            let l = self.instructions.len();
-            for i in (0..l).rev() {
-                if self.instructions[i] == Instruction::Jump(0) {
-                    self.instructions.push(Instruction::Jump(i - l));
-                    self.instructions[i] = Instruction::Jump(l - i + 1);
+        if let Instruction::Backward(_) = instruction {
+            for i in (0..self.instructions.len()).rev() {
+                if self.instructions[i] == Instruction::Forward(0) {
+                    // Jumping to the next instruction after [
+                    self.instructions.push(Instruction::Backward(i + 1));
+                    // Jumping to the next instruction after ]
+                    self.instructions[i] = Instruction::Forward(self.instructions.len());
+                    break;
                 }
             }
         } else {
@@ -63,9 +64,9 @@ impl Program {
     }
 
     pub fn pop(&mut self) {
-        let l = self.instructions.len();
-        if let Instruction::Jump(delta) = self.instructions[l-1] && delta < 0 {
-            self.instructions[l - 1 + delta] = Instruction::Jump(0);
+        if let Instruction::Backward(address) = *self.instructions.last().unwrap() {
+            assert!(self.instructions[address - 1] == Instruction::Forward(self.instructions.len()));
+            self.instructions[address - 1] = Instruction::Forward(0);
         }
         self.instructions.pop();
     }
@@ -90,24 +91,11 @@ impl FromStr for Program {
                 '-' => Instruction::Dec,
                 '>' => Instruction::Right,
                 '<' => Instruction::Left,
-                '[' => Instruction::Label,
-                ']' => {
-                    let mut ip = program.len();
-                    let mut nesting = 1;
-                    while nesting > 0 {
-                        if ip == 0 { return Err(()); }
-                        ip -= 1;
-                        nesting += match program[ip] {
-                            Instruction::Loop(_) => 1,
-                            Instruction::Label => -1,
-                            _ => 0,
-                        };
-                    }
-                    Instruction::Loop(ip as u16)
-                },
-                _ => return Err(())
+                '[' => Instruction::Forward(0),
+                ']' => Instruction::Backward(0),
+                _ => return Err(()),
             };
-            program.instructions.push(instruction);
+            program.push(instruction);
         }
         Ok(program)
     }
@@ -241,16 +229,20 @@ impl State {
                     self.ip += 1;
                 }
             },
-            Instruction::Label => {
-                self.ip += 1;
+            Instruction::Forward(new_ip) => {
+                if self.tape[self.pos] == 0 {
+                    self.ip = new_ip;
+                } else {
+                    self.ip += 1;
+                }
             },
-            Instruction::Loop(new_ip) => {
+            Instruction::Backward(new_ip) => {
                 if self.tape[self.pos] == 0 {
                     self.ip += 1;
                 } else {
-                    self.ip = new_ip as usize + 1;
+                    self.ip = new_ip;
                 }
-            }
+            },
         };
         if self.ip >= self.program.len() {
             self.status = Status::Finished;
