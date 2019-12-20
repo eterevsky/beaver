@@ -21,6 +21,13 @@ impl Instruction {
             _ => false,
         }
     }
+
+    pub fn is_forward(self) -> bool {
+        match self {
+            Instruction::Forward(_) => true,
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Display for Instruction {
@@ -69,6 +76,18 @@ impl Program {
             self.instructions[address - 1] = Instruction::Forward(0);
         }
         self.instructions.pop();
+    }
+
+    pub fn nesting_at(&self, ip: usize) -> usize {
+        let mut nesting = 0;
+        for i in 0..ip {
+            match self[i] {
+                Instruction::Forward(_) => nesting += 1,
+                Instruction::Backward(_) => nesting -= 1,
+                _ => ()
+            };
+        }
+        nesting
     }
 }
 
@@ -178,7 +197,6 @@ impl State {
         State { program, tape: vec![0], ip: 0, pos: 0, step: 0, status: Status::Running }
     }
 
-    #[cfg(test)]
     pub fn val_at_offset(&self, offset: isize) -> Option<u8> {
         let address = self.pos as isize + offset;
         if address < 0 {

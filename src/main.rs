@@ -114,7 +114,6 @@ impl Predicate {
         }
     }
 
-    #[cfg(test)]
     fn check(&self, state: &State) -> bool {
         match self {
             Predicate::True => true,
@@ -487,18 +486,16 @@ impl fmt::Display for Proof {
     }
 }
 
-fn prove_from_ip(program: &Program, start_ip: usize, verbose: bool) -> Option<Proof> {
+fn prove_from_ip(program: &Program, start_ip: usize, partial_proof: &Vec<Predicate>, verbose: bool) -> Option<Vec<Predicate>> {
     assert!(start_ip < program.len());
-    if verbose { println!("{}", program) }
-    let mut invariants = vec![Predicate::False; program.len()];
-    for i in 0..start_ip {
-        invariants[i] = Predicate::True;
-    }
+    let mut invariants = partial_proof.clone();
 
     let invariant = if start_ip == 0 {
         Predicate::ZerosFrom(0)
     } else if program[start_ip - 1].is_backward() {
         Predicate::Equals(0, 0)
+    } else if program[start_ip - 1].is_forward() {
+        Predicate::GreaterThan(0, 0)
     } else {
         Predicate::True
     };
@@ -535,32 +532,59 @@ fn prove_from_ip(program: &Program, start_ip: usize, verbose: bool) -> Option<Pr
         }
     }
 
-    Some(Proof { program: program.clone(), invariants })
+    Some(invariants)
 }
 
 fn prove_runs_forever(program: &Program) -> Option<Proof> {
-    let mut nesting = 0;
-    for ip in (0..program.len()).rev() {
-        nesting += match program[ip] {
-            Instruction::Backward(_) => 1,
-            Instruction::Forward(_) => -1,
-            _ => 0,
-        };
-        if ip == 0 || (nesting == 0 && program[ip - 1].is_backward()) {
-            let maybe_proof = prove_from_ip(program, ip, false);
-            if maybe_proof.is_some() {
-                return maybe_proof;
+    assert!(program.len() >= 2);
+    let mut ip = program.len() - 2;
+    let mut invariants = vec![Predicate::False; program.len()];
+    loop {
+        if ip == 0 ||
+           (2 <= ip && ip < program.len() - 1 &&
+            match (program[ip - 1], program[ip], program[ip + 1]) {
+                (_, Instruction::Inc, Instruction::Backward(_)) => true,
+                (Instruction::Forward(_), _, _) => true,
+                (Instruction::Backward(_), _, _) => true,
+                _ => false 
+            }) {
+            let mut temp_proof = Proof { program: program.clone(), invariants: invariants.clone() };
+            // println!("ip = {}", ip);
+            // println!("current proof:\n{}", temp_proof.to_string());
+            let maybe_proof = prove_from_ip(program, ip, &invariants, false);
+            if let Some(new_invariants) = maybe_proof {
+                temp_proof.invariants = new_invariants.clone();
+                // println!("new proof:\n{}", temp_proof.to_string());
+                invariants = new_invariants;
+                if program.nesting_at(ip) == 0 {
+                    for i in 0..invariants.len() {
+                        if invariants[i] == Predicate::False {
+                            invariants[i] = Predicate::True;
+                        } else {
+                            break;
+                        }
+                    }
+                    return Some(Proof{ invariants, program: program.clone() })
+                } else {
+                    assert!(invariants[0] == Predicate::False);
+                    ip = 1;
+                    while invariants[ip] == Predicate::False { ip += 1; }
+                    ip -= 1;
+                }
+            } else {
+                if ip == 0 { break }
+                ip -= 1
             }
+        } else {
+            if ip == 0 { break }
+            ip -= 1;
         }
     }
     None
 }
 
 /// Verify a proof by running the program and checking the predicate on every step.
-#[cfg(test)]
-fn verify_proof(proof: Option<Proof>) -> bool {
-    if !proof.is_some() { return false; }
-    let proof = proof.unwrap();
+fn verify_proof(proof: &Proof) -> bool {
     let mut state = State::new(proof.program.clone());
     for _ in 0..1000 {
         match state.status {
@@ -588,8 +612,8 @@ fn verify_proof(proof: Option<Proof>) -> bool {
 fn test_program(prog_str: &str) {
     let program: Program = prog_str.parse().unwrap();
     let proof = prove_runs_forever(&program);
-    dbg!(&proof);
-    assert!(verify_proof(proof));
+    assert!(proof.is_some());
+    assert!(verify_proof(&proof.unwrap()));
 }
 
 #[test]
@@ -641,7 +665,8 @@ fn test_len(l: usize, finishing: usize) {
             
             Status::RunsForever => {
                 println!("{}", p);
-                assert!(verify_proof(proof))
+                assert!(proof.is_some());
+                assert!(verify_proof(&proof.unwrap()))
             },
 
             Status::Running => panic!(),
@@ -851,10 +876,10 @@ fn main() {
     let len: usize = arg.parse().unwrap_or(0);
     if len == 0 {
         let program = arg.parse().unwrap();
-        dbg!(&program);
         let (state, proof) = solve_program(&program);
         println!("{}", state);
         if let Some(p) = proof {
+            assert!(verify_proof(&p));
             println!("{}", p);
         }
     } else {
