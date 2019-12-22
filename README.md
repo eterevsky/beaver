@@ -7,7 +7,7 @@ This project tries to achieve the following goals:
 * Find the shortest Brainfuck program, for which we can't tell whether it stops or not.
 * Find the Busy Beaver Brainfuck programs for various lengths: the programs that take the most steps or touch the most cells, and then ultimatelty stop.
 
-See [results](#results) below. Spoiler: we ran all programs up to length 11 and solved halting problem for all programs up to length 10.
+See [results](#results) below. Spoiler: we ran all programs up to length 15 and solved halting problem for all programs up to length 11.
 
 ## Usage
 
@@ -58,23 +58,23 @@ The prover assumes that all the operations are successful, so the proof of non-s
 
 Number of programs per length:
 
-| Length | Total          | Finishing   | Run forever   | Overflow       | Unknown   |
-| ------ | -------------- | ----------- | ------------- | -------------- | --------- |
-| 1      | 4              | 2           |               | 2              |           |
-| 2      | 17             | 7           |               | 10             |           |
-| 3      | 76             | 24          | 1             | 51             |           |
-| 4      | 354            | 98          | 6             | 250            |           |
-| 5      | 1'704          | 413         | 39            | 1'252          |           |
-| 6      | 8'421          | 1'871       | 216           | 6'334          |           |
-| 7      | 42'508         | 8'740       | 1'208         | 32'560         |           |
-| 8      | 218'318        | 42'347      | 6'574         | 169'397        |           |
-| 9      | 1'137'400      | 209'880     | 35'890        | 891'630        |           |
-| 10     | 5'996'938      | 1'063'012   | 195'327       | 4'738'599      |           |
-| 11     | 31'940'792     | 5'471'231   | 1'066'548     | 25'403'013     |           |
-| 12     | 171'605'956    | 28'565'478  | 5'836'504     | 137'203'965    | 9         |
-| 13     | 928'931'280    | 150'873'711 | 32'053'475    | 746'003'989    | 105       |
-| 14     | 5'061'593'709  | 804'952'161 | 176'587'237   | 4'080'024'300  | 30'011    |
-| 15     | 
+| Length | Total          | Finishing     | Run forever   | Overflow       | Unknown   |
+| ------ | -------------- | ------------- | ------------- | -------------- | --------- |
+| 1      | 4              | 2             |               | 2              |           |
+| 2      | 17             | 7             |               | 10             |           |
+| 3      | 76             | 24            | 1             | 51             |           |
+| 4      | 354            | 98            | 6             | 250            |           |
+| 5      | 1'704          | 413           | 39            | 1'252          |           |
+| 6      | 8'421          | 1'871         | 216           | 6'334          |           |
+| 7      | 42'508         | 8'740         | 1'208         | 32'560         |           |
+| 8      | 218'318        | 42'347        | 6'574         | 169'397        |           |
+| 9      | 1'137'400      | 209'880       | 35'890        | 891'630        |           |
+| 10     | 5'996'938      | 1'063'012     | 195'327       | 4'738'599      |           |
+| 11     | 31'940'792     | 5'471'231     | 1'066'548     | 25'403'013     |           |
+| 12     | 171'605'956    | 28'565'478    | 5'836'504     | 137'203'965    | 9         |
+| 13     | 928'931'280    | 150'873'711   | 32'053'475    | 746'003'989    | 105       |
+| 14     | 5'061'593'709  | 804'952'161   | 176'615'807   | 4'080'024'300  | 1'441     |
+| 15     | 27'739'833'228 | 4'331'432'233 | 976'565'131   | 22'431'822'963 | 12'901    |
 
 Beasy beavers:
 
@@ -94,7 +94,7 @@ Beasy beavers:
 | 12     | `++++++[->+<]` 37      | `>>>>>>>>>>>>` 13    |
 | 13     | `>++++[-[>]+<]` 53     | `>>>>>>>>>>>>>` 14   |
 | 14     | `>+[>+++[-<]>>]` 110   | `>>>>>>>>>>>>>>` 15  |
-| 15     | 
+| 15     | `>+[>++++[-<]>>]` 153  | `>>>>>>>>>>>>>>>` 16 |
 
 Here are all the programs of length 12 for which `beaver` can't automatically prove they aren't stopping:
     
