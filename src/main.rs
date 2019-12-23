@@ -1,12 +1,11 @@
 mod brainfuck;
 
-use crate::brainfuck::{Instruction, Program, State, Status, run};
 #[cfg(test)]
 use crate::brainfuck::gen_valid_programs;
+use crate::brainfuck::{run, Instruction, Program, State, Status};
 use std::collections::VecDeque;
 use std::env;
 use std::fmt;
-
 
 #[derive(PartialEq, Debug, Clone)]
 enum Predicate {
@@ -15,7 +14,7 @@ enum Predicate {
 
     // Always false.
     False,
-    
+
     // The tape starting from current position + offset is all zeros.
     ZerosFrom(isize),
 
@@ -49,11 +48,13 @@ fn optimize_all(children: Vec<Predicate>) -> Vec<Predicate> {
     flatten_all(&mut children);
     for i in 0..children.len() {
         for j in 0..children.len() {
-            if i == j { continue; }
-            if children[i].implies(&children[j]) { 
+            if i == j {
+                continue;
+            }
+            if children[i].implies(&children[j]) {
                 children[j] = Predicate::True;
             } else if children[i].incompatible(&children[j]) {
-                return vec![Predicate::False]
+                return vec![Predicate::False];
             }
         }
     }
@@ -78,7 +79,7 @@ fn optimize_any(mut children: Vec<Predicate>) -> Vec<Predicate> {
     flatten_any(&mut children);
     for i in 0..children.len() {
         for j in 0..children.len() {
-            if i != j && children[j].implies(&children[i]) { 
+            if i != j && children[j].implies(&children[i]) {
                 children[j] = Predicate::False;
             }
         }
@@ -103,14 +104,14 @@ impl Predicate {
     fn is_any(&self) -> bool {
         match self {
             Predicate::Any(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
     fn is_all(&self) -> bool {
         match self {
             Predicate::All(_) => true,
-            _ => false
+            _ => false,
         }
     }
 
@@ -125,7 +126,7 @@ impl Predicate {
                 } else {
                     ((start as usize)..state.tape.len()).all(|i| state.tape[i] == 0)
                 }
-            },
+            }
             Predicate::Equals(offset, x) => state.val_at_offset(*offset) == Some(*x),
             Predicate::GreaterThan(offset, x) => match state.val_at_offset(*offset) {
                 None => false,
@@ -139,20 +140,25 @@ impl Predicate {
     fn optimize(self) -> Self {
         match self {
             Predicate::All(children) => {
-                let children: Vec<Predicate> = children.iter().map(|c| c.clone().optimize()).collect();
+                let children: Vec<Predicate> =
+                    children.iter().map(|c| c.clone().optimize()).collect();
                 let temp_self = Predicate::All(children.clone());
 
                 for child in children.iter() {
                     match child {
                         Predicate::False => return Predicate::False,
 
-                        Predicate::Equals(o, v) => if *v != 0 && temp_self.implies(&Predicate::Equals(*o, 0)) {
-                            return Predicate::False
-                        },
+                        Predicate::Equals(o, v) => {
+                            if *v != 0 && temp_self.implies(&Predicate::Equals(*o, 0)) {
+                                return Predicate::False;
+                            }
+                        }
 
-                        Predicate::GreaterThan(o, _) => if temp_self.implies(&Predicate::Equals(*o, 0)) {
-                            return Predicate::False
-                        },
+                        Predicate::GreaterThan(o, _) => {
+                            if temp_self.implies(&Predicate::Equals(*o, 0)) {
+                                return Predicate::False;
+                            }
+                        }
 
                         _ => (),
                     }
@@ -173,19 +179,20 @@ impl Predicate {
                     1 => new_children[0].clone(),
                     _ => Predicate::All(new_children),
                 }
-            },
+            }
 
             Predicate::Any(children) => {
-                let children: Vec<Predicate> = children.iter().map(|c| c.clone().optimize()).collect();
+                let children: Vec<Predicate> =
+                    children.iter().map(|c| c.clone().optimize()).collect();
                 let new_children = optimize_any(children);
                 match new_children.len() {
                     0 => Predicate::False,
                     1 => new_children[0].clone(),
-                    _ => Predicate::Any(new_children)
-                }    
-            },
+                    _ => Predicate::Any(new_children),
+                }
+            }
 
-            _ => self
+            _ => self,
         }
     }
 
@@ -206,20 +213,25 @@ impl Predicate {
 
             (Predicate::All(children), o) => children.iter().any(|c| c.implies(o)),
 
-            (Predicate::ZerosFrom(offset_x), Predicate::ZerosFrom(offset_y)) =>
-                *offset_x <= *offset_y,
+            (Predicate::ZerosFrom(offset_x), Predicate::ZerosFrom(offset_y)) => {
+                *offset_x <= *offset_y
+            }
 
-            (Predicate::Equals(offset_x, x), Predicate::Equals(offset_y, y)) =>
-                *offset_x == *offset_y && *x == *y,
+            (Predicate::Equals(offset_x, x), Predicate::Equals(offset_y, y)) => {
+                *offset_x == *offset_y && *x == *y
+            }
 
-            (Predicate::ZerosFrom(offset_x), Predicate::Equals(offset_y, y)) =>
-                *offset_x <= *offset_y && *y == 0,
+            (Predicate::ZerosFrom(offset_x), Predicate::Equals(offset_y, y)) => {
+                *offset_x <= *offset_y && *y == 0
+            }
 
-            (Predicate::Equals(offset_x, x), Predicate::GreaterThan(offset_y, y)) =>
-                *offset_x == *offset_y && x > y,
+            (Predicate::Equals(offset_x, x), Predicate::GreaterThan(offset_y, y)) => {
+                *offset_x == *offset_y && x > y
+            }
 
-            (Predicate::GreaterThan(offset_x, x), Predicate::GreaterThan(offset_y, y)) =>
-                *offset_x == *offset_y && x >= y,
+            (Predicate::GreaterThan(offset_x, x), Predicate::GreaterThan(offset_y, y)) => {
+                *offset_x == *offset_y && x >= y
+            }
 
             _ => false,
         }
@@ -240,45 +252,54 @@ impl Predicate {
 
             (Predicate::All(children), o) => children.iter().any(|c| c.incompatible(o)),
 
-            (Predicate::ZerosFrom(zeros_from), Predicate::Equals(offset, v)) =>
-                zeros_from <= offset && *v != 0,
+            (Predicate::ZerosFrom(zeros_from), Predicate::Equals(offset, v)) => {
+                zeros_from <= offset && *v != 0
+            }
 
-            (Predicate::Equals(offset, v), Predicate::ZerosFrom(zeros_from)) =>
-                zeros_from <= offset && *v != 0,
+            (Predicate::Equals(offset, v), Predicate::ZerosFrom(zeros_from)) => {
+                zeros_from <= offset && *v != 0
+            }
 
-            (Predicate::ZerosFrom(zeros_from), Predicate::GreaterThan(offset, _)) =>
-                zeros_from <= offset,
+            (Predicate::ZerosFrom(zeros_from), Predicate::GreaterThan(offset, _)) => {
+                zeros_from <= offset
+            }
 
-            (Predicate::GreaterThan(offset, _), Predicate::ZerosFrom(zeros_from)) =>
-                zeros_from <= offset,
+            (Predicate::GreaterThan(offset, _), Predicate::ZerosFrom(zeros_from)) => {
+                zeros_from <= offset
+            }
 
-            (Predicate::Equals(offset_e, v), Predicate::GreaterThan(offset_g, l)) =>
-                offset_e == offset_g && v <= l,
+            (Predicate::Equals(offset_e, v), Predicate::GreaterThan(offset_g, l)) => {
+                offset_e == offset_g && v <= l
+            }
 
-            (Predicate::GreaterThan(offset_g, l), Predicate::Equals(offset_e, v)) =>
-                offset_e == offset_g && v <= l,
+            (Predicate::GreaterThan(offset_g, l), Predicate::Equals(offset_e, v)) => {
+                offset_e == offset_g && v <= l
+            }
 
-            (Predicate::Equals(o1, v1), Predicate::Equals(o2, v2)) =>
-                o1 == o2 && v1 != v2,
+            (Predicate::Equals(o1, v1), Predicate::Equals(o2, v2)) => o1 == o2 && v1 != v2,
 
             _ => false,
         }
     }
 
-    // Recursively apply the instruction.  
+    // Recursively apply the instruction.
     fn apply_impl(&self, instruction: Instruction) -> Self {
         match (instruction, self.clone()) {
-            (i, Predicate::All(children)) => 
-                Predicate::All(children.iter().map(|c| c.apply_impl(i)).collect()).optimize(),
+            (i, Predicate::All(children)) => {
+                Predicate::All(children.iter().map(|c| c.apply_impl(i)).collect()).optimize()
+            }
 
-            (i, Predicate::Any(children)) => 
-                Predicate::Any(children.iter().map(|c| c.apply_impl(i)).collect()).optimize(),
+            (i, Predicate::Any(children)) => {
+                Predicate::Any(children.iter().map(|c| c.apply_impl(i)).collect()).optimize()
+            }
 
             (_, Predicate::True) => Predicate::True,
 
             (_, Predicate::False) => Predicate::False,
 
-            (Instruction::Inc, Predicate::ZerosFrom(offset)) if offset > 0 => Predicate::ZerosFrom(offset),
+            (Instruction::Inc, Predicate::ZerosFrom(offset)) if offset > 0 => {
+                Predicate::ZerosFrom(offset)
+            }
 
             (Instruction::Inc, Predicate::ZerosFrom(offset)) if offset <= 0 => {
                 let mut children = vec![Predicate::ZerosFrom(1), Predicate::Equals(0, 1)];
@@ -286,61 +307,70 @@ impl Predicate {
                     children.push(Predicate::Equals(i, 0));
                 }
                 Predicate::All(children)
-            },
+            }
 
             (Instruction::Inc, Predicate::Equals(0, x)) => Predicate::Equals(0, x + 1),
-           
+
             (Instruction::Inc, Predicate::Equals(offset, x)) => Predicate::Equals(offset, x),
 
             (Instruction::Inc, Predicate::GreaterThan(0, x)) => Predicate::GreaterThan(0, x + 1),
-           
-            (Instruction::Inc, Predicate::GreaterThan(offset, x)) => Predicate::GreaterThan(offset, x),
 
+            (Instruction::Inc, Predicate::GreaterThan(offset, x)) => {
+                Predicate::GreaterThan(offset, x)
+            }
 
             (Instruction::Dec, Predicate::ZerosFrom(offset)) if offset <= 0 => Predicate::False,
 
             (Instruction::Dec, Predicate::ZerosFrom(offset)) => Predicate::ZerosFrom(offset),
 
             (Instruction::Dec, Predicate::Equals(0, 0)) => Predicate::False,
-           
+
             (Instruction::Dec, Predicate::Equals(0, x)) => Predicate::Equals(0, x - 1),
-           
+
             (Instruction::Dec, Predicate::Equals(offset, x)) => Predicate::Equals(offset, x),
 
             (Instruction::Dec, Predicate::GreaterThan(0, 0)) => Predicate::True,
-           
-            (Instruction::Dec, Predicate::GreaterThan(0, x)) => Predicate::GreaterThan(0, x - 1),
-           
-            (Instruction::Dec, Predicate::GreaterThan(offset, x)) => Predicate::GreaterThan(offset, x),
 
+            (Instruction::Dec, Predicate::GreaterThan(0, x)) => Predicate::GreaterThan(0, x - 1),
+
+            (Instruction::Dec, Predicate::GreaterThan(offset, x)) => {
+                Predicate::GreaterThan(offset, x)
+            }
 
             (Instruction::Right, Predicate::ZerosFrom(offset)) => Predicate::ZerosFrom(offset - 1),
 
             (Instruction::Right, Predicate::Equals(offset, x)) => Predicate::Equals(offset - 1, x),
 
-            (Instruction::Right, Predicate::GreaterThan(offset, x)) => Predicate::GreaterThan(offset - 1, x),
-
+            (Instruction::Right, Predicate::GreaterThan(offset, x)) => {
+                Predicate::GreaterThan(offset - 1, x)
+            }
 
             (Instruction::Left, Predicate::ZerosFrom(offset)) => Predicate::ZerosFrom(offset + 1),
 
             (Instruction::Left, Predicate::Equals(offset, x)) => Predicate::Equals(offset + 1, x),
 
-            (Instruction::Left, Predicate::GreaterThan(offset, x)) => Predicate::GreaterThan(offset + 1, x),
+            (Instruction::Left, Predicate::GreaterThan(offset, x)) => {
+                Predicate::GreaterThan(offset + 1, x)
+            }
 
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
     // Construct a weaker version of the predicate by modifying all the predicates with offset
-    // farther than +/-2.
-    fn weaken(self) -> Self {
+    // farther than `max_offset`.
+    fn weaken(self, max_offset: isize) -> Self {
         match self {
-            Predicate::Equals(offset, _) if offset < -2 || offset > 2 => Predicate::True,
-            Predicate::GreaterThan(offset, _) if offset < -2 || offset > 2 => Predicate::True,
-            Predicate::All(mut children) =>
-                Predicate::All(children.drain(..).map(|c| c.weaken()).collect()).optimize(),
-            Predicate::Any(mut children) =>
-                Predicate::Any(children.drain(..).map(|c| c.weaken()).collect()).optimize(),
+            Predicate::Equals(offset, _) if offset.abs() > max_offset => Predicate::True,
+            Predicate::GreaterThan(offset, _) if offset.abs() > max_offset => Predicate::True,
+            Predicate::All(mut children) => {
+                Predicate::All(children.drain(..).map(|c| c.weaken(max_offset)).collect())
+                    .optimize()
+            }
+            Predicate::Any(mut children) => {
+                Predicate::Any(children.drain(..).map(|c| c.weaken(max_offset)).collect())
+                    .optimize()
+            }
             _ => self,
         }
     }
@@ -353,7 +383,7 @@ impl Predicate {
             Predicate::All(vec![Predicate::GreaterThan(0, 0), predicate]).optimize()
         } else {
             predicate
-        } 
+        }
     }
 
     fn step(&self, program: &Program, ip: usize) -> ((Self, usize), Option<(Self, usize)>) {
@@ -361,36 +391,54 @@ impl Predicate {
         match program[ip] {
             Instruction::Forward(target) => {
                 if self.implies(&Predicate::GreaterThan(0, 0)) {
-                    ((self.clone(), ip + 1), None)   
+                    ((self.clone(), ip + 1), None)
                 } else if self.implies(&Predicate::Equals(0, 0)) {
                     ((self.clone(), target), None)
                 } else {
-                    ((Predicate::All(vec![self.clone(), Predicate::GreaterThan(0, 0)]).optimize(), ip + 1),
-                     Some((Predicate::All(vec![self.clone(), Predicate::Equals(0, 0)]).optimize(), target)))
+                    (
+                        (
+                            Predicate::All(vec![self.clone(), Predicate::GreaterThan(0, 0)])
+                                .optimize(),
+                            ip + 1,
+                        ),
+                        Some((
+                            Predicate::All(vec![self.clone(), Predicate::Equals(0, 0)]).optimize(),
+                            target,
+                        )),
+                    )
                 }
-            },
+            }
             Instruction::Backward(target) => {
                 if self.implies(&Predicate::GreaterThan(0, 0)) {
-                    ((self.clone(), target), None)   
+                    ((self.clone(), target), None)
                 } else if self.implies(&Predicate::Equals(0, 0)) {
                     ((self.clone(), ip + 1), None)
                 } else {
-                    ((Predicate::All(vec![self.clone(), Predicate::GreaterThan(0, 0)]).optimize(), target),
-                     Some((Predicate::All(vec![self.clone(), Predicate::Equals(0, 0)]).optimize(), ip + 1)))
+                    (
+                        (
+                            Predicate::All(vec![self.clone(), Predicate::GreaterThan(0, 0)])
+                                .optimize(),
+                            target,
+                        ),
+                        Some((
+                            Predicate::All(vec![self.clone(), Predicate::Equals(0, 0)]).optimize(),
+                            ip + 1,
+                        )),
+                    )
                 }
-            },
-            instruction => ((self.apply(instruction), ip + 1), None)
+            }
+            instruction => ((self.apply(instruction), ip + 1), None),
         }
     }
 
     // Find a predicate that follows from both self and other.
-    fn intersect(&self, other: &Predicate) -> Self {
+    fn intersect(&self, other: &Predicate, max_offset: isize) -> Self {
         if self.implies(other) {
             other.clone()
         } else if other.implies(self) {
             self.clone()
         } else {
-            Predicate::Any(vec![self.clone(), other.clone()]).weaken()
+            Predicate::Any(vec![self.clone(), other.clone()]).weaken(max_offset)
         }
     }
 }
@@ -401,7 +449,7 @@ fn test_optimize() {
         Predicate::All(vec![Predicate::Equals(1, 2), Predicate::Equals(1, 2)]),
         Predicate::Equals(1, 2),
         Predicate::True,
-        ]);
+    ]);
     let optimized = predicate.optimize();
     assert_eq!(optimized, Predicate::Equals(1, 2));
 }
@@ -480,107 +528,152 @@ impl fmt::Display for Proof {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "    {:?}", &self.invariants[0])?;
         for i in 1..self.invariants.len() {
-            writeln!(f, "{}   {:?}", self.program[i-1], self.invariants[i])?;
+            writeln!(f, "{}   {:?}", self.program[i - 1], self.invariants[i])?;
         }
         writeln!(f, "{}", self.program[self.program.len() - 1])
     }
 }
 
-fn prove_from_ip(program: &Program, start_ip: usize, partial_proof: &Vec<Predicate>, verbose: bool) -> Option<Vec<Predicate>> {
-    assert!(start_ip < program.len());
-    let mut invariants = partial_proof.clone();
-
-    let invariant = if start_ip == 0 {
-        Predicate::ZerosFrom(0)
-    } else if program[start_ip - 1].is_backward() {
-        Predicate::Equals(0, 0)
-    } else if program[start_ip - 1].is_forward() {
-        Predicate::GreaterThan(0, 0)
-    } else {
-        Predicate::True
-    };
-
-    let mut queue = VecDeque::new();
-    queue.push_back((start_ip, invariant));
-    let mut counter = 0;
-
-    while let Some((ip, invariant)) = queue.pop_front() {
-        counter += 1;
-        if counter > 64 { return None; }
-        if ip >= program.len() {
-            // We reached the end of the program.
-            return None;
-        }
-        let old_invariant = &invariants[ip];
-        if invariant.implies(old_invariant) {
-            // We proved the current invariant.
-            continue;
-        }
-        if verbose {
-            println!("old: {:?}, incoming: {:?}", old_invariant, invariant);
-        }
-        invariants[ip] = invariant.intersect(old_invariant);
-        let current_invariant = &invariants[ip];
-        if verbose {
-            println!("invariant[{}] = {:?}", ip, invariants[ip]);
-        }
-
-        let ((new_invariant, new_ip), maybe_other) = current_invariant.step(program, ip);
-        queue.push_back((new_ip, new_invariant));
-        if let Some((new_inv2, new_ip2)) = maybe_other {
-            queue.push_back((new_ip2, new_inv2))
-        }
-    }
-
-    Some(invariants)
+struct Prover {
+    // During weaken() we will drop any predicates about cells that are further from
+    // the current cell than this.
+    max_offset: isize,
+    // Number of steps in proof search.
+    max_steps: usize,
 }
 
-fn prove_runs_forever(program: &Program) -> Option<Proof> {
-    assert!(program.len() >= 2);
-    let mut ip = program.len() - 2;
-    let mut invariants = vec![Predicate::False; program.len()];
-    loop {
-        if ip == 0 ||
-           (2 <= ip && ip < program.len() - 1 &&
-            match (program[ip - 1], program[ip], program[ip + 1]) {
-                (_, Instruction::Inc, Instruction::Backward(_)) => true,
-                (Instruction::Forward(_), _, _) => true,
-                (Instruction::Backward(_), _, _) => true,
-                _ => false 
-            }) {
-            let mut temp_proof = Proof { program: program.clone(), invariants: invariants.clone() };
-            // println!("ip = {}", ip);
-            // println!("current proof:\n{}", temp_proof.to_string());
-            let maybe_proof = prove_from_ip(program, ip, &invariants, false);
-            if let Some(new_invariants) = maybe_proof {
-                temp_proof.invariants = new_invariants.clone();
-                // println!("new proof:\n{}", temp_proof.to_string());
-                invariants = new_invariants;
-                if program.nesting_at(ip) == 0 {
-                    for i in 0..invariants.len() {
-                        if invariants[i] == Predicate::False {
-                            invariants[i] = Predicate::True;
-                        } else {
-                            break;
-                        }
-                    }
-                    return Some(Proof{ invariants, program: program.clone() })
-                } else {
-                    assert!(invariants[0] == Predicate::False);
-                    ip = 1;
-                    while invariants[ip] == Predicate::False { ip += 1; }
-                    ip -= 1;
-                }
-            } else {
-                if ip == 0 { break }
-                ip -= 1
-            }
-        } else {
-            if ip == 0 { break }
-            ip -= 1;
+static mut prover_steps: [usize; 192] = [0; 192];
+
+impl Prover {
+    fn new(max_offset: isize, max_steps: usize) -> Self {
+        Prover {
+            max_offset,
+            max_steps,
         }
     }
-    None
+
+    fn prove_from_ip(
+        &self,
+        program: &Program,
+        start_ip: usize,
+        partial_proof: &Vec<Predicate>,
+        verbose: bool,
+    ) -> Option<Vec<Predicate>> {
+        assert!(start_ip < program.len());
+        let mut invariants = partial_proof.clone();
+
+        let invariant = if start_ip == 0 {
+            Predicate::ZerosFrom(0)
+        } else if program[start_ip - 1].is_backward() {
+            Predicate::Equals(0, 0)
+        } else if program[start_ip - 1].is_forward() {
+            Predicate::GreaterThan(0, 0)
+        } else {
+            Predicate::True
+        };
+
+        let mut queue = VecDeque::new();
+        queue.push_back((start_ip, invariant));
+        let mut counter = 0;
+
+        while let Some((ip, invariant)) = queue.pop_front() {
+            if counter >= self.max_steps {
+                return None;
+            }
+            counter += 1;
+            if ip >= program.len() {
+                // We reached the end of the program.
+                return None;
+            }
+            let old_invariant = &invariants[ip];
+            if invariant.implies(old_invariant) {
+                // We proved the old invariant.
+                continue;
+            }
+            if verbose {
+                println!("old: {:?}, incoming: {:?}", old_invariant, invariant);
+            }
+            invariants[ip] = invariant.intersect(old_invariant, self.max_offset);
+            let current_invariant = &invariants[ip];
+            if verbose {
+                println!("invariant[{}] = {:?}", ip, invariants[ip]);
+            }
+
+            let ((new_invariant, new_ip), maybe_other) = current_invariant.step(program, ip);
+            queue.push_back((new_ip, new_invariant));
+            if let Some((new_inv2, new_ip2)) = maybe_other {
+                queue.push_back((new_ip2, new_inv2))
+            }
+        }
+
+        unsafe {
+            prover_steps[counter] += 1;
+        }
+
+        Some(invariants)
+    }
+
+    fn prove_runs_forever(&self, program: &Program) -> Option<Proof> {
+        assert!(program.len() >= 2);
+        let mut ip = program.len() - 2;
+        let mut invariants = vec![Predicate::False; program.len()];
+        loop {
+            if ip == 0
+                || (2 <= ip
+                    && ip < program.len() - 1
+                    && match (program[ip - 1], program[ip], program[ip + 1]) {
+                        (_, Instruction::Inc, Instruction::Backward(_)) => true,
+                        (Instruction::Forward(_), _, _) => true,
+                        (Instruction::Backward(_), _, _) => true,
+                        _ => false,
+                    })
+            {
+                let mut temp_proof = Proof {
+                    program: program.clone(),
+                    invariants: invariants.clone(),
+                };
+                // println!("ip = {}", ip);
+                // println!("current proof:\n{}", temp_proof.to_string());
+                let maybe_proof = self.prove_from_ip(program, ip, &invariants, false);
+                if let Some(new_invariants) = maybe_proof {
+                    temp_proof.invariants = new_invariants.clone();
+                    // println!("new proof:\n{}", temp_proof.to_string());
+                    invariants = new_invariants;
+                    if program.nesting_at(ip) == 0 {
+                        for i in 0..invariants.len() {
+                            if invariants[i] == Predicate::False {
+                                invariants[i] = Predicate::True;
+                            } else {
+                                break;
+                            }
+                        }
+                        return Some(Proof {
+                            invariants,
+                            program: program.clone(),
+                        });
+                    } else {
+                        assert!(invariants[0] == Predicate::False);
+                        ip = 1;
+                        while invariants[ip] == Predicate::False {
+                            ip += 1;
+                        }
+                        ip -= 1;
+                    }
+                } else {
+                    if ip == 0 {
+                        break;
+                    }
+                    ip -= 1
+                }
+            } else {
+                if ip == 0 {
+                    break;
+                }
+                ip -= 1;
+            }
+        }
+        None
+    }
 }
 
 /// Verify a proof by running the program and checking the predicate on every step.
@@ -593,8 +686,8 @@ fn verify_proof(proof: &Proof) -> bool {
                 println!("{}", &state);
                 println!("Program finished");
                 return false;
-            },
-            _ => ()
+            }
+            _ => (),
         }
         if !proof.invariants[state.ip].check(&state) {
             println!("IP = {}", state.ip);
@@ -611,7 +704,7 @@ fn verify_proof(proof: &Proof) -> bool {
 #[cfg(test)]
 fn test_program(prog_str: &str) {
     let program: Program = prog_str.parse().unwrap();
-    let proof = prove_runs_forever(&program);
+    let proof = Prover::new(2, 64).prove_runs_forever(&program);
     assert!(proof.is_some());
     assert!(verify_proof(&proof.unwrap()));
 }
@@ -642,17 +735,38 @@ fn test_nested_loop() {
 }
 
 fn solve_program(program: &Program) -> (State, Option<Proof>) {
-    let mut state = run(program, 5000);
-
-    if state.status == Status::Running {
-        let maybe_proof = prove_runs_forever(program);
-        if maybe_proof.is_some() {
-            state.status = Status::RunsForever;
-        }
-        (state, maybe_proof)
-    } else {
-        (state, None)
+    let mut state = run(program, 200);
+    if state.status != Status::Running {
+        return (state, None);
     }
+
+    let maybe_proof = Prover::new(1, 32).prove_runs_forever(program);
+    if maybe_proof.is_some() {
+        state.status = Status::RunsForever;
+        return (state, maybe_proof);
+    }
+
+    state.run(2000);
+    if state.status != Status::Running {
+        return (state, None);
+    }
+
+    let maybe_proof = Prover::new(2, 64).prove_runs_forever(program);
+    if maybe_proof.is_some() {
+        state.status = Status::RunsForever;
+        return (state, maybe_proof);
+    }
+
+    state.run(20000);
+    if state.status != Status::Running {
+        return (state, None);
+    }
+
+    let maybe_proof = Prover::new(3, 128).prove_runs_forever(program);
+    if maybe_proof.is_some() {
+        state.status = Status::RunsForever;
+    }
+    (state, maybe_proof)
 }
 
 #[cfg(test)]
@@ -662,12 +776,12 @@ fn test_len(l: usize, finishing: usize) {
         let (state, proof) = solve_program(&p);
         match state.status {
             Status::Finished => finished += 1,
-            
+
             Status::RunsForever => {
                 println!("{}", p);
                 assert!(proof.is_some());
                 assert!(verify_proof(&proof.unwrap()))
-            },
+            }
 
             Status::Running => panic!(),
 
@@ -745,7 +859,7 @@ impl Stats {
 
 fn program_stats(program: &Program) -> Stats {
     let (state, _) = solve_program(program);
-    
+
     let mut finished = 0;
     let mut run_forever = 0;
     let mut overflow = 0;
@@ -762,9 +876,8 @@ fn program_stats(program: &Program) -> Stats {
             longest_running_program = Some(program.clone());
             longest_tape = state.tape.len();
             longest_tape_program = Some(program.clone());
-        },
-        Status::TapeOverflow | Status::ValueOverflow =>
-            overflow = 1,
+        }
+        Status::TapeOverflow | Status::ValueOverflow => overflow = 1,
         Status::RunsForever => run_forever = 1,
         Status::Running => {
             unknown = 1;
@@ -772,13 +885,42 @@ fn program_stats(program: &Program) -> Stats {
         }
     };
 
-    Stats { total: 1, finished, run_forever, overflow, unknown, longest_run, longest_running_program, longest_tape, longest_tape_program }
+    Stats {
+        total: 1,
+        finished,
+        run_forever,
+        overflow,
+        unknown,
+        longest_run,
+        longest_running_program,
+        longest_tape,
+        longest_tape_program,
+    }
 }
 
 // Generated by possible_programs.rs
 const NPROGRAMS: &[u64] = &[
-    1, 4, 17, 76, 354, 1704, 8421, 42508, 218318, 1137400, 5996938, 31940792,
-    171605956, 928931280, 5061593709, 27739833228];
+    1,
+    4,
+    17,
+    76,
+    354,
+    1704,
+    8421,
+    42508,
+    218318,
+    1137400,
+    5996938,
+    31940792,
+    171605956,
+    928931280,
+    5061593709,
+    27739833228,
+    152809506582,
+    845646470616,
+    4699126915422,
+    26209721959656,
+];
 
 fn gen_and_solve(len: usize, prefix: &Program, opened_loops: usize) -> Stats {
     if prefix.len() + opened_loops == len {
@@ -802,14 +944,21 @@ fn gen_and_solve(len: usize, prefix: &Program, opened_loops: usize) -> Stats {
                     // the program runs forever based on the rest of the program.
                     println!("    {}", prefix);
                     (0, 0, nprograms)
-                },
+                }
                 Status::Finished => unreachable!(),
             };
 
-            return Stats { total: nprograms, finished: 0,
-                           run_forever, overflow, unknown,
-                           longest_run: 0, longest_running_program: None,
-                           longest_tape: 0, longest_tape_program: None }
+            return Stats {
+                total: nprograms,
+                finished: 0,
+                run_forever,
+                overflow,
+                unknown,
+                longest_run: 0,
+                longest_running_program: None,
+                longest_tape: 0,
+                longest_tape_program: None,
+            };
         }
     }
 
@@ -866,8 +1015,22 @@ fn solve_len(len: usize) {
     println!("Run forever: {}", stats.run_forever);
     println!("Overflow: {}", stats.overflow);
     println!("Unknown: {}", stats.unknown);
-    println!("Longest run: {} {}", stats.longest_running_program.unwrap(), stats.longest_run);
-    println!("Longest tape: {} {}", stats.longest_tape_program.unwrap(), stats.longest_tape);
+    println!(
+        "Longest run: {} {}",
+        stats.longest_running_program.unwrap(),
+        stats.longest_run
+    );
+    println!(
+        "Longest tape: {} {}",
+        stats.longest_tape_program.unwrap(),
+        stats.longest_tape
+    );
+
+    for i in 0..130 {
+        unsafe {
+            println!("{} steps: {}", i, prover_steps[i]);
+        }
+    }
 }
 
 fn main() {

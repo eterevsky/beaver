@@ -267,7 +267,7 @@ impl State {
         }
     }
     
-    fn run(&mut self, steps: usize) {
+    pub fn run(&mut self, steps: usize) {
         for _ in 0..steps {
             self.step();
             if self.status != Status::Running { break; }
