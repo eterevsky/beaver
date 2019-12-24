@@ -1075,9 +1075,19 @@ struct JobResult {
 const FORK_LEN: usize = 10;
 const NTHREADS: usize = 16;
 
-fn gen_and_queue(len: usize, prefix: &Program, jobs_sender: &Sender<Job>, results_sender: &Sender<JobResult>) -> usize {
+fn gen_and_queue(
+    len: usize,
+    prefix: &Program,
+    jobs_sender: &Sender<Job>,
+    results_sender: &Sender<JobResult>,
+) -> usize {
     if let Some(stats) = solve_prefix(len, prefix) {
-        results_sender.send(JobResult { prefix: prefix.clone(), stats }).unwrap();
+        results_sender
+            .send(JobResult {
+                prefix: prefix.clone(),
+                stats,
+            })
+            .unwrap();
         return 1;
     }
 
@@ -1105,7 +1115,7 @@ fn worker(jobs_receiver: Arc<Mutex<Receiver<Job>>>, results_sender: Sender<JobRe
             Job::Stop => break,
             Job::Solve((len, prefix)) => {
                 let stats = gen_and_solve(len, &prefix);
-                results_sender.send(JobResult{ prefix, stats }).unwrap();
+                results_sender.send(JobResult { prefix, stats }).unwrap();
             }
         }
     }
@@ -1132,7 +1142,13 @@ fn solve_parallel(len: usize) -> Stats {
     let mut stats = Stats::new();
     for _ in 0..nresults {
         let res = results_receiver.recv().unwrap();
-        println!("{}  {} / {} / {}", res.prefix, res.stats.finished, res.stats.run_forever + res.stats.overflow, res.stats.unknown);
+        println!(
+            "{}  {} / {} / {}",
+            res.prefix,
+            res.stats.finished,
+            res.stats.run_forever + res.stats.overflow,
+            res.stats.unknown
+        );
         stats.merge(res.stats)
     }
 
