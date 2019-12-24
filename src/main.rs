@@ -6,6 +6,9 @@ use crate::brainfuck::{run, Instruction, Program, State, Status};
 use std::collections::VecDeque;
 use std::env;
 use std::fmt;
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::{Arc, Mutex};
+use std::thread::spawn;
 
 #[derive(PartialEq, Debug, Clone)]
 enum Predicate {
@@ -481,28 +484,28 @@ fn test_imply_zeros_from() {
 #[test]
 fn test_weaken1() {
     let predicate = Predicate::Equals(-2, 1);
-    let weaker = predicate.clone().weaken();
+    let weaker = predicate.clone().weaken(2);
     assert!(predicate.implies(&weaker));
 }
 
 #[test]
 fn test_weaken_and() {
     let predicate = Predicate::All(vec![Predicate::Equals(-2, 1), Predicate::ZerosFrom(1)]);
-    let weaker = predicate.clone().weaken();
+    let weaker = predicate.clone().weaken(2);
     assert!(predicate.implies(&weaker));
 }
 
 #[test]
 fn test_weaken_or() {
     let predicate = Predicate::Any(vec![Predicate::Equals(-2, 1), Predicate::ZerosFrom(1)]);
-    let weaker = predicate.clone().weaken();
+    let weaker = predicate.clone().weaken(2);
     assert!(predicate.implies(&weaker));
 }
 
 #[test]
 fn test_composite_pred_apply() {
     let predicate = Predicate::All(vec![Predicate::ZerosFrom(1), Predicate::Equals(0, 1)]);
-    let expected = Predicate::All(vec![Predicate::ZerosFrom(1), Predicate::Equals(0, 2)]);;
+    let expected = Predicate::All(vec![Predicate::ZerosFrom(1), Predicate::Equals(0, 2)]);
     let next = predicate.apply(Instruction::Inc);
     assert!(next.implies(&expected));
     assert!(expected.implies(&next));
@@ -542,7 +545,7 @@ struct Prover {
     max_steps: usize,
 }
 
-static mut prover_steps: [usize; 192] = [0; 192];
+static mut PROVER_STEPS: [usize; 192] = [0; 192];
 
 impl Prover {
     fn new(max_offset: isize, max_steps: usize) -> Self {
@@ -607,7 +610,7 @@ impl Prover {
         }
 
         unsafe {
-            prover_steps[counter] += 1;
+            PROVER_STEPS[counter] += 1;
         }
 
         Some(invariants)
@@ -826,7 +829,7 @@ fn test7() {
     test_len(7, 8740);
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct Stats {
     total: u64,
     finished: u64,
@@ -840,6 +843,20 @@ struct Stats {
 }
 
 impl Stats {
+    fn new() -> Self {
+        Stats {
+            total: 0,
+            finished: 0,
+            run_forever: 0,
+            overflow: 0,
+            unknown: 0,
+            longest_run: 0,
+            longest_running_program: None,
+            longest_tape: 0,
+            longest_tape_program: None,
+        }
+    }
+
     fn merge(&mut self, other: Stats) {
         self.total += other.total;
         self.finished += other.finished;
@@ -922,14 +939,16 @@ const NPROGRAMS: &[u64] = &[
     26209721959656,
 ];
 
-fn gen_and_solve(len: usize, prefix: &Program, opened_loops: usize) -> Stats {
+fn solve_prefix(len: usize, prefix: &Program) -> Option<Stats> {
+    let opened_loops = prefix.nesting_at(prefix.len());
+
     if prefix.len() + opened_loops == len {
         let mut program = prefix.clone();
         // Just one possible program
         for _ in 0..opened_loops {
             program.push(Instruction::Backward(0));
         }
-        return program_stats(&program);
+        return Some(program_stats(&program));
     }
 
     if opened_loops == 0 && prefix.len() != 0 {
@@ -948,7 +967,7 @@ fn gen_and_solve(len: usize, prefix: &Program, opened_loops: usize) -> Stats {
                 Status::Finished => unreachable!(),
             };
 
-            return Stats {
+            Some(Stats {
                 total: nprograms,
                 finished: 0,
                 run_forever,
@@ -958,36 +977,72 @@ fn gen_and_solve(len: usize, prefix: &Program, opened_loops: usize) -> Stats {
                 longest_running_program: None,
                 longest_tape: 0,
                 longest_tape_program: None,
-            };
+            })
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
+const INSTRUCTIONS_NONE: &[Instruction] = &[
+    Instruction::Inc,
+    Instruction::Dec,
+    Instruction::Left,
+    Instruction::Right,
+];
+const INSTRUCTIONS_FWD: &[Instruction] = &[
+    Instruction::Inc,
+    Instruction::Dec,
+    Instruction::Left,
+    Instruction::Right,
+    Instruction::Forward(0),
+];
+const INSTRUCTIONS_BACK: &[Instruction] = &[
+    Instruction::Inc,
+    Instruction::Dec,
+    Instruction::Left,
+    Instruction::Right,
+    Instruction::Backward(0),
+];
+const INSTRUCTIONS_BOTH: &[Instruction] = &[
+    Instruction::Inc,
+    Instruction::Dec,
+    Instruction::Left,
+    Instruction::Right,
+    Instruction::Forward(0),
+    Instruction::Backward(0),
+];
+
+fn possible_instructions(len: usize, prefix: &Program) -> &'static [Instruction] {
+    let opened_loops = prefix.nesting_at(prefix.len());
+    if len - prefix.len() >= opened_loops + 2 {
+        if opened_loops > 0 {
+            INSTRUCTIONS_BOTH
+        } else {
+            INSTRUCTIONS_FWD
+        }
+    } else {
+        if opened_loops > 0 {
+            INSTRUCTIONS_BACK
+        } else {
+            INSTRUCTIONS_NONE
         }
     }
+}
 
-    let mut program = prefix.clone();
-    program.push(Instruction::Inc);
-    let mut stats = gen_and_solve(len, &program, opened_loops);
-    program.pop();
-
-    program.push(Instruction::Dec);
-    stats.merge(gen_and_solve(len, &program, opened_loops));
-    program.pop();
-
-    program.push(Instruction::Left);
-    stats.merge(gen_and_solve(len, &program, opened_loops));
-    program.pop();
-
-    program.push(Instruction::Right);
-    stats.merge(gen_and_solve(len, &program, opened_loops));
-    program.pop();
-
-    if len - prefix.len() >= opened_loops + 2 {
-        program.push(Instruction::Forward(0));
-        stats.merge(gen_and_solve(len, &program, opened_loops + 1));
-        program.pop();
+fn gen_and_solve(len: usize, prefix: &Program) -> Stats {
+    if let Some(stats) = solve_prefix(len, prefix) {
+        return stats;
     }
 
-    if opened_loops > 0 {
-        program.push(Instruction::Backward(0));
-        stats.merge(gen_and_solve(len, &program, opened_loops - 1));
+    let mut stats = Stats::new();
+    let mut program = prefix.clone();
+
+    for instruction in possible_instructions(len, prefix).iter() {
+        program.push(*instruction);
+        stats.merge(gen_and_solve(len, &program));
         program.pop();
     }
 
@@ -996,7 +1051,7 @@ fn gen_and_solve(len: usize, prefix: &Program, opened_loops: usize) -> Stats {
 
 #[test]
 fn test7_gen() {
-    let stats = gen_and_solve(7, &"".parse().unwrap(), 0);
+    let stats = gen_and_solve(7, &"".parse().unwrap());
     assert_eq!(stats.total, 42508);
     assert_eq!(stats.finished, 8740);
     assert_eq!(stats.run_forever + stats.overflow, 1208 + 32560);
@@ -1005,11 +1060,94 @@ fn test7_gen() {
     assert_eq!(stats.longest_tape, 8);
 }
 
+#[derive(Clone)]
+enum Job {
+    Stop,
+    Solve((usize, Program)),
+}
+
+#[derive(Clone)]
+struct JobResult {
+    prefix: Program,
+    stats: Stats,
+}
+
+const FORK_LEN: usize = 10;
+const NTHREADS: usize = 16;
+
+fn gen_and_queue(len: usize, prefix: &Program, jobs_sender: &Sender<Job>, results_sender: &Sender<JobResult>) -> usize {
+    if let Some(stats) = solve_prefix(len, prefix) {
+        results_sender.send(JobResult { prefix: prefix.clone(), stats }).unwrap();
+        return 1;
+    }
+
+    if len - prefix.len() == FORK_LEN {
+        jobs_sender.send(Job::Solve((len, prefix.clone()))).unwrap();
+        return 1;
+    }
+
+    let mut program = prefix.clone();
+    let mut nresults = 0;
+
+    for instruction in possible_instructions(len, prefix).iter() {
+        program.push(*instruction);
+        nresults += gen_and_queue(len, &program, jobs_sender, results_sender);
+        program.pop();
+    }
+
+    nresults
+}
+
+fn worker(jobs_receiver: Arc<Mutex<Receiver<Job>>>, results_sender: Sender<JobResult>) {
+    loop {
+        let job = jobs_receiver.lock().unwrap().recv().unwrap();
+        match job {
+            Job::Stop => break,
+            Job::Solve((len, prefix)) => {
+                let stats = gen_and_solve(len, &prefix);
+                results_sender.send(JobResult{ prefix, stats }).unwrap();
+            }
+        }
+    }
+}
+
+fn solve_parallel(len: usize) -> Stats {
+    let mut threads = Vec::new();
+    let (jobs_sender, jobs_receiver) = channel();
+    let jobs_receiver = Arc::new(Mutex::new(jobs_receiver));
+    let (results_sender, results_receiver) = channel();
+    for _ in 0..NTHREADS {
+        let jobs_receiver_clone = jobs_receiver.clone();
+        let results_sender_clone = results_sender.clone();
+        threads.push(spawn(move || {
+            worker(jobs_receiver_clone, results_sender_clone);
+        }))
+    }
+
+    let nresults = gen_and_queue(len, &"".parse().unwrap(), &jobs_sender, &results_sender);
+    for _ in 0..NTHREADS {
+        jobs_sender.send(Job::Stop).unwrap();
+    }
+
+    let mut stats = Stats::new();
+    for _ in 0..nresults {
+        let res = results_receiver.recv().unwrap();
+        println!("{}  {} / {} / {}", res.prefix, res.stats.finished, res.stats.run_forever + res.stats.overflow, res.stats.unknown);
+        stats.merge(res.stats)
+    }
+
+    stats
+}
+
 fn solve_len(len: usize) {
     println!("Length {}", len);
     println!("Total programs: {}\n", NPROGRAMS[len]);
 
-    let stats = gen_and_solve(len, &"".parse().unwrap(), 0);
+    let stats = if len <= 8 {
+        gen_and_solve(len, &"".parse().unwrap())
+    } else {
+        solve_parallel(len)
+    };
     println!("\nTotal: {}", stats.total);
     println!("Finished: {}", stats.finished);
     println!("Run forever: {}", stats.run_forever);
@@ -1026,11 +1164,11 @@ fn solve_len(len: usize) {
         stats.longest_tape
     );
 
-    for i in 0..130 {
-        unsafe {
-            println!("{} steps: {}", i, prover_steps[i]);
-        }
-    }
+    // for i in 0..130 {
+    //     unsafe {
+    //         println!("{} steps: {}", i, PROVER_STEPS[i]);
+    //     }
+    // }
 }
 
 fn main() {

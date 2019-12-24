@@ -1,0 +1,25 @@
+Length 12 on my Macbook Pro:
+
+1 thread:
+
+real    4m58.649s
+user    4m59.008s
+sys     0m0.343s
+
+8 threads:
+
+real    0m57.391s
+user    7m27.469s
+sys     0m1.133s
+
+16 threads:
+
+real    0m48.003s
+user    12m0.841s
+sys     0m1.632s
+
+Length 16 MBP 16 threads:
+
+real    882m19.293s
+user    13746m13.438s
+sys     13m36.405s
