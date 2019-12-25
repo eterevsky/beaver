@@ -545,8 +545,6 @@ struct Prover {
     max_steps: usize,
 }
 
-static mut PROVER_STEPS: [usize; 192] = [0; 192];
-
 impl Prover {
     fn new(max_offset: isize, max_steps: usize) -> Self {
         Prover {
@@ -607,10 +605,6 @@ impl Prover {
             if let Some((new_inv2, new_ip2)) = maybe_other {
                 queue.push_back((new_ip2, new_inv2))
             }
-        }
-
-        unsafe {
-            PROVER_STEPS[counter] += 1;
         }
 
         Some(invariants)
@@ -1086,8 +1080,8 @@ struct JobResult {
     stats: Stats,
 }
 
-const JOB_LEN: usize = 10;
-const NTHREADS: usize = 16;
+const JOB_LEN: usize = 11;
+const NTHREADS: usize = 72;
 
 fn gen_and_queue(
     len: usize,
