@@ -1,4 +1,5 @@
 use crate::brainfuck::{Instruction, Program, State, Status};
+use crate::statement::{Term, Proof, Proposition};
 use std::collections::VecDeque;
 use std::fmt;
 
@@ -473,6 +474,38 @@ impl LocalStatement {
             LocalStatement::Any(vec![self.clone(), other.clone()]).weaken(max_offset)
         }
     }
+
+    fn as_proposition(self) -> Proposition {
+        match self {
+            LocalStatement::True => Proposition::True,
+            LocalStatement::False => Proposition::False,
+
+            LocalStatement::ZerosFrom(0) => Proposition::or2(
+                Proposition::Equals(Term::tape(Term::Var(0)), Term::Const(0)),
+                Proposition::Greater(Term::Pos, Term::Var(0)),
+            ),
+            LocalStatement::ZerosFrom(x) => Proposition::or2(
+                Proposition::Equals(Term::tape(Term::Var(0)), Term::Const(0)),
+                Proposition::Greater(Term::sum2(Term::Pos, Term::Const(x)), Term::Var(0)),
+            ),
+
+            LocalStatement::Equals(0, y) => Proposition::Equals(Term::tape(Term::Pos), Term::Const(y as isize)),
+            LocalStatement::Equals(x, y) => Proposition::Equals(
+                Term::tape(Term::sum2(Term::Pos, Term::Const(x))),
+                Term::Const(y as isize)),
+
+            LocalStatement::GreaterThan(0, y) => Proposition::Greater(Term::tape(Term::Pos), Term::Const(y as isize)),
+            LocalStatement::GreaterThan(x, y) => Proposition::Greater(
+                Term::tape(Term::sum2(Term::Pos, Term::Const(x))),
+                Term::Const(y as isize)),
+
+            LocalStatement::All(mut clauses) => 
+                Proposition::and_ind(clauses.drain(..).map(|x| x.as_proposition()).collect()),
+
+            LocalStatement::Any(mut clauses) => 
+                Proposition::or_ind(clauses.drain(..).map(|x| x.as_proposition()).collect()),
+        }
+    }
 }
 
 #[test]
@@ -572,6 +605,15 @@ fn test_zeros_apply_inc() {
 pub struct LocalProof {
     program: Program,
     invariants: Vec<LocalStatement>,
+}
+
+impl LocalProof {
+    pub fn as_proof(mut self) -> Proof {
+        Proof {
+            program: self.program,
+            invariants: self.invariants.drain(..).map(|i| i.as_proposition()).collect(),
+        }
+    }
 }
 
 impl fmt::Display for LocalProof {
