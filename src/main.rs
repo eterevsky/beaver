@@ -776,6 +776,17 @@ fn solve_program(program: &Program) -> (State, Option<Proof>) {
         return (state, maybe_proof);
     }
 
+    state.run(2000000);
+    if state.status != Status::Running {
+        return (state, None);
+    }
+
+    let maybe_proof = Prover::new(5, 512).prove_runs_forever(program);
+    if maybe_proof.is_some() {
+        state.status = Status::RunsForever;
+        return (state, maybe_proof);
+    }
+
     (state, maybe_proof)
 }
 
