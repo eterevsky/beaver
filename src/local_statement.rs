@@ -1,4 +1,6 @@
-use crate::brainfuck::{Instruction, Program, State};
+use crate::brainfuck::{Instruction, Program, State, Status};
+use std::collections::VecDeque;
+use std::fmt;
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum LocalStatement {
@@ -565,3 +567,214 @@ fn test_zeros_apply_inc() {
     assert!(next.implies(&expected));
     assert!(expected.implies(&next));
 }
+
+#[derive(Debug)]
+pub struct LocalProof {
+    program: Program,
+    invariants: Vec<LocalStatement>,
+}
+
+impl fmt::Display for LocalProof {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "    {:?}", &self.invariants[0])?;
+        for i in 1..self.invariants.len() {
+            writeln!(f, "{}   {:?}", self.program[i - 1], self.invariants[i])?;
+        }
+        writeln!(f, "{}", self.program[self.program.len() - 1])
+    }
+}
+
+pub struct LocalProver {
+    // During weaken() we will drop any predicates about cells that are further from
+    // the current cell than this.
+    max_offset: isize,
+    // Number of steps in proof search.
+    max_steps: usize,
+}
+
+impl LocalProver {
+    pub fn new(max_offset: isize, max_steps: usize) -> Self {
+        LocalProver {
+            max_offset,
+            max_steps,
+        }
+    }
+
+    fn prove_from_ip(
+        &self,
+        program: &Program,
+        start_ip: usize,
+        partial_proof: &Vec<LocalStatement>,
+        verbose: bool,
+    ) -> Option<Vec<LocalStatement>> {
+        assert!(start_ip < program.len());
+        let mut invariants = partial_proof.clone();
+
+        let invariant = if start_ip == 0 {
+            LocalStatement::ZerosFrom(0)
+        } else if program[start_ip - 1].is_backward() {
+            LocalStatement::Equals(0, 0)
+        } else if program[start_ip - 1].is_forward() {
+            LocalStatement::GreaterThan(0, 0)
+        } else {
+            LocalStatement::True
+        };
+
+        let mut queue = VecDeque::new();
+        queue.push_back((start_ip, invariant));
+        let mut counter = 0;
+
+        while let Some((ip, invariant)) = queue.pop_front() {
+            if counter >= self.max_steps {
+                return None;
+            }
+            counter += 1;
+            if ip >= program.len() {
+                // We reached the end of the program.
+                return None;
+            }
+            let old_invariant = &invariants[ip];
+            if invariant.implies(old_invariant) {
+                // We proved the old invariant.
+                continue;
+            }
+            if verbose {
+                println!("old: {:?}, incoming: {:?}", old_invariant, invariant);
+            }
+            invariants[ip] = invariant.intersect(old_invariant, self.max_offset);
+            let current_invariant = &invariants[ip];
+            if verbose {
+                println!("invariant[{}] = {:?}", ip, invariants[ip]);
+            }
+
+            let ((new_invariant, new_ip), maybe_other) = current_invariant.step(program, ip);
+            queue.push_back((new_ip, new_invariant));
+            if let Some((new_inv2, new_ip2)) = maybe_other {
+                queue.push_back((new_ip2, new_inv2))
+            }
+        }
+
+        Some(invariants)
+    }
+
+    pub fn prove_runs_forever(&self, program: &Program) -> Option<LocalProof> {
+        assert!(program.len() >= 2);
+        let mut ip = program.len() - 2;
+        let mut invariants = vec![LocalStatement::False; program.len()];
+        loop {
+            if ip == 0
+                || (2 <= ip
+                    && ip < program.len() - 1
+                    && match (program[ip - 1], program[ip], program[ip + 1]) {
+                        (_, Instruction::Inc, Instruction::Backward(_)) => true,
+                        (Instruction::Forward(_), _, _) => true,
+                        (Instruction::Backward(_), _, _) => true,
+                        _ => false,
+                    })
+            {
+                let mut temp_proof = LocalProof {
+                    program: program.clone(),
+                    invariants: invariants.clone(),
+                };
+                // println!("ip = {}", ip);
+                // println!("current proof:\n{}", temp_proof.to_string());
+                let maybe_proof = self.prove_from_ip(program, ip, &invariants, false);
+                if let Some(new_invariants) = maybe_proof {
+                    temp_proof.invariants = new_invariants.clone();
+                    // println!("new proof:\n{}", temp_proof.to_string());
+                    invariants = new_invariants;
+                    if program.nesting_at(ip) == 0 {
+                        for i in 0..invariants.len() {
+                            if invariants[i] == LocalStatement::False {
+                                invariants[i] = LocalStatement::True;
+                            } else {
+                                break;
+                            }
+                        }
+                        return Some(LocalProof {
+                            invariants,
+                            program: program.clone(),
+                        });
+                    } else {
+                        assert!(invariants[0] == LocalStatement::False);
+                        ip = 1;
+                        while invariants[ip] == LocalStatement::False {
+                            ip += 1;
+                        }
+                        ip -= 1;
+                    }
+                } else {
+                    if ip == 0 {
+                        break;
+                    }
+                    ip -= 1
+                }
+            } else {
+                if ip == 0 {
+                    break;
+                }
+                ip -= 1;
+            }
+        }
+        None
+    }
+}
+
+/// Verify a proof by running the program and checking the predicate on every step.
+pub fn verify_proof(proof: &LocalProof) -> bool {
+    let mut state = State::new(proof.program.clone());
+    for _ in 0..1000 {
+        match state.status {
+            Status::TapeOverflow | Status::ValueOverflow => return true,
+            Status::Finished => {
+                println!("{}", &state);
+                println!("Program finished");
+                return false;
+            }
+            _ => (),
+        }
+        if !proof.invariants[state.ip].check(&state) {
+            println!("IP = {}", state.ip);
+            println!("Invariant failed: {:?}", &proof.invariants[state.ip]);
+            println!("{}", &state);
+            println!("{}", &proof);
+            return false;
+        }
+        state.step();
+    }
+    true
+}
+
+#[cfg(test)]
+fn test_program(prog_str: &str) {
+    let program: Program = prog_str.parse().unwrap();
+    let proof = LocalProver::new(2, 64).prove_runs_forever(&program);
+    assert!(proof.is_some());
+    assert!(verify_proof(&proof.unwrap()));
+}
+
+#[test]
+fn test_simple_loop() {
+    test_program("+[]");
+}
+
+#[test]
+fn test_right_left() {
+    test_program("+[><]");
+}
+
+#[test]
+fn test_right_right_left() {
+    test_program("+[>><+]");
+}
+
+#[test]
+fn test_loop_with_init() {
+    test_program("+[[]+]");
+}
+
+#[test]
+fn test_nested_loop() {
+    test_program("+[[>]<]");
+}
+
