@@ -7,7 +7,7 @@ This project tries to achieve the following goals:
 * Find the shortest Brainfuck program, for which we can't tell whether it stops or not.
 * Find the Busy Beaver Brainfuck programs for various lengths: the programs that take the most steps or touch the most cells, and then ultimatelty stop.
 
-See [results](#results) below. Spoiler: we ran all programs up to length 16 and solved halting problem for all programs up to length 12.
+See [results](#results) below. Spoiler: we ran all programs up to length 18 and solved halting problem for all programs up to length 12.
 
 ## Usage
 
@@ -52,7 +52,7 @@ To exclude some uninteresting long-running programs we use a pretty restrictive 
 * The values in the cells are from 0 to 255.
 * Increment of 255 and decrement of 0 result in overflow and program halting.
 
-The prover assumes that all the operations are successful, so the proof of non-stopping actually means that the program either runs forever, or stops due to an overflow. 
+The prover assumes that all the operations are successful, so the proof of non-stopping actually means that the program either runs forever, or stops due to an overflow.
 
 ## Results
 
@@ -103,7 +103,7 @@ Beasy beavers:
 | 18     | `>+[>++>+++[-<]>>]+` 9'213 | `>+>+[+>++[<]>->->]` 25 |
 
 Here are all the programs of length 13-14 for which `beaver` can't automatically prove that they aren't stopping:
-    
+
     +++[-[+[>]]+<]
     ++[-[++[>]]+<]
     ++[-[+>[>]]+<]
